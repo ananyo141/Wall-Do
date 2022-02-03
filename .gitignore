@@ -1,0 +1,5 @@
+# Ignore Cache and bytecode
+__pycache__/
+*.py[ocx]
+*.swp
+
