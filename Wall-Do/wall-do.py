@@ -6,5 +6,5 @@ import logging
 
 walldologger = logging.getLogger('main.walldo')
 walldologger.debug('main module')
-AlphaDownloader('ironman').startDownload()
+AlphaDownloader('ironman', 30, downloadDir = '/tmp/ironman').startDownload()
 

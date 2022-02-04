@@ -10,10 +10,11 @@
 
 import os, sys, logging, time
 import threading, requests, bs4
-from exceptions import MainPageError, ImageDownloadError
 from logger import mainlogger
+from exceptions import MainPageError, ImageDownloadError
 
-downloadLogger = logging.getLogger('main.download')
+# get module logger
+downloadLogger = logging.getLogger('main.downloader')
 
 """
 A Wallpaper Downloader Class for https://wall.alphacoders.com
@@ -99,16 +100,19 @@ class AlphaDownloader:
         for imgname, imglink in imgList:
             self.downloadImage(imglink, imgname)
 
+    # FIXME: Handle exceptions while downloading,
+    # fix downloading beyond given limit
     def downloadImage(self, link, name=None):
         " download given image link "
         if name is None:
             name = os.path.basename(link).rstrip('.jpg')
         try:
-            image = requests.get(link, headers = self.headers)
-            #image = self.downloadSession.get(link)
+            #image = requests.get(link, headers = self.headers)
+            image = self.downloadSession.get(link)
             image.raise_for_status();                                   downloadLogger.info(f'{image.status_code = }')
         except Exception as exc:
-            raise ImageDownloadError(link) from exc
+            downloadLogger.critical(f'{ImageDownloadError(link)}\n{str(exc)}')
+            return
 
         imgfilename = os.path.join(self.downloadDir, name + '.jpg')
         downloadLogger.info(f'{imgfilename = }')
@@ -135,10 +139,12 @@ class AlphaDownloader:
                 pageResponse = self.downloadSession.get(pageUrl)
                 pageResponse.raise_for_status();                                   downloadLogger.info(f'{pageResponse.status_code = }')
             except Exception as exc:
-                raise MainPageError(pageNum) from None
+                downloadLogger.critical(f'{str(MainPageError(pageNum))}\n{str(exc)}')
+                continue
             # parse and get the image links
             mainPageSoup = bs4.BeautifulSoup(pageResponse.text, 'lxml')
-            imageTags = mainPageSoup.select('img.img-responsive');                 downloadLogger.debug(f'{pageUrl = } {len(imageTags) = }')
+            # get the image elements with class='img-responsive'
+            imageTags = mainPageSoup.select('img.img-responsive');                 downloadLogger.debug(f'{len(imageTags) = }')
             # generate imagename, imagelink for every image found
             for imageTag in imageTags:
                 imageName = imageTag.get('alt').rstrip(' HD Wallpaper | Background Image')[:50]

@@ -8,5 +8,8 @@ logging.basicConfig(level=logging.DEBUG, datefmt='%d/%m/%Y %I:%M:%S %p',
 
 #logging.disable(logging.CRITICAL)
 
+# disable the connection library logger
+logging.getLogger('urllib3.connectionpool').disabled = True
+
 mainlogger = logging.getLogger('main')
 
