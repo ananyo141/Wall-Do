@@ -19,9 +19,9 @@ from logger import mainlogger
 
 downloadLogger = logging.getLogger('main.download')
 
-'''
+"""
 A Wallpaper Downloader Class for https://wall.alphacoders.com
-'''
+"""
 class AlphaDownloader:
     queryStr = \
         'https://wall.alphacoders.com/search.php?search=%(searchKey)s&page=%(pageNo)d'
@@ -35,22 +35,27 @@ class AlphaDownloader:
     totalSize = 0
     totalDownloads = 0
 
-    # FIXME: NumPages and NumImages should be an exclusive choice
-    def __init__(self, searchKey, numImages=10, numPages=5, downloadDir=os.getcwd()):
+    def __init__(self, searchKey, downloadDir=os.curdir,
+                       numImages=None, numPages=None, progVar=None):
         " initialize attributes for object "
         self.downloadSession = requests.Session()
         self.downloadSession.headers.update(self.headers)
-        self.reset(searchKey, numPages, downloadDir)
+        self.reset(searchKey, downloadDir, numImages, numPages, progVar)
 
-    def reset(self, searchKey, numPages, downloadDir):
+    def reset(self, searchKey, downloadDir=os.curdir, 
+                    numImages=None, numPages=None, progVar=None):
         " reset settings for different download config "
+        if numImages is None and numPages is None:
+            raise ValueError("Specify number of images or pages to download")
         self.searchKey = searchKey
         self.numImages = numImages
         self.numPages  = numPages
+        self.progVar   = progVar
 
         # Make sure download dir exists
         os.makedirs(downloadDir, exist_ok=True)
         self.downloadDir   = downloadDir
+
         # For current run
         self.numDownloaded = 0
         self.lastDownloadTime = None
@@ -60,7 +65,11 @@ class AlphaDownloader:
         start = time.time()
         ImgPerPage   = 30
         ImgPerThread = 5
-
+        
+        # Find number of pages to download; Convert
+        # if num images given
+        numPages = self.numImages // ImgPerPage \
+                   if self.numImages else self.numPages
         imgList = []
         #for imgname, imglink in self.fetchLinks(se
 
@@ -98,7 +107,7 @@ class AlphaDownloader:
         Optional: Stop: if not given, scrape links for start page only,
                   Step: default 1, can travel backwards if given negative value 
         """
-        if stop is None:
+        if stop is None:    # generate links for one page only
             stop = start + 1
         downloadLogger.info(f'{start = }, {stop = }, {step = }')
         for pageNum in range(start, stop, step):
