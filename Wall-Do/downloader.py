@@ -1,14 +1,10 @@
-# This module contains all the required backend stuff (logic)
-# required to handle and download from website.
-
-# URL signature looks like:
-# https://wall.alphacoders.com/search.php?search={searchKey}&page={PageNo}
 
 """
-TODO:
-For numpages, hit up the query string and scrape the page
-Every Page will give a number of link tags, get them
-Download the images with the links
+ This module contains all the required backend stuff (logic)
+ required to handle and download from website.
+
+ URL signature looks like:
+ https://wall.alphacoders.com/search.php?search={searchKey}&page={PageNo}
 
 """
 
@@ -35,46 +31,65 @@ class AlphaDownloader:
     totalSize = 0
     totalDownloads = 0
 
-    def __init__(self, searchKey, downloadDir=os.curdir,
-                       numImages=None, numPages=None, progVar=None):
+    def __init__(self, searchKey, numImages, downloadDir=os.curdir,
+                       progressVar=None, currentVar=None, trace=False):
         " initialize attributes for object "
         self.downloadSession = requests.Session()
         self.downloadSession.headers.update(self.headers)
-        self.reset(searchKey, downloadDir, numImages, numPages, progVar)
+        self.reset(searchKey, numImages, downloadDir, progressVar, currentVar, trace)
 
-    def reset(self, searchKey, downloadDir=os.curdir, 
-                    numImages=None, numPages=None, progVar=None):
+    def reset(self, searchKey, numImages, downloadDir=os.curdir,
+                       progressVar=None, currentVar=None, trace=False):
         " reset settings for different download config "
-        if numImages is None and numPages is None:
-            raise ValueError("Specify number of images or pages to download")
         self.searchKey = searchKey
         self.numImages = numImages
-        self.numPages  = numPages
-        self.progVar   = progVar
+        self.progressVar = progressVar
+        self.currentVar  = currentVar
+        self.trace = trace
 
         # Make sure download dir exists
         os.makedirs(downloadDir, exist_ok=True)
         self.downloadDir   = downloadDir
 
         # For current run
+        self.numPages = 0
         self.numDownloaded = 0
         self.lastDownloadTime = None
 
     def startDownload(self): 
         " toplevel method for starting download "
         start = time.time()
-        ImgPerPage   = 30
         ImgPerThread = 5
         
-        # Find number of pages to download; Convert
-        # if num images given
-        numPages = self.numImages // ImgPerPage \
-                   if self.numImages else self.numPages
-        imgList = []
-        #for imgname, imglink in self.fetchLinks(se
+        imgArg = []
+        threads = []
+        self.numPages = 1
+        while self.numDownloaded < self.numImages:
+            for imgTuple in self.fetchLinks(self.numPages):
+                if self.numDownloaded >= self.numImages: 
+                    break
+                imgArg.append(imgTuple)
+                if len(imgArg) == ImgPerThread:
+                    thread = threading.Thread(target=self.downloadSq, args=(imgArg,))
+                    threads.append(thread)
+                    thread.start()
+                    imgArg = []
+            self.numPages += 1
+
+        for thread in threads: thread.join()
 
         self.lastDownloadTime = time.time() - start
         self.totalDownloads += self.numDownloaded
+
+        if self.trace:
+            print('\n', ' Statistics: '.center(50, '*'))
+            print("Current Run:\n"
+                  "Downloaded: %d, Time taken: %d secs\n"
+                  "Number of Pages: %d\n"
+                  "Session Details:\n"
+                  "Total Downloads: %d, Total Size: %d\n"
+                  % (self.numDownloaded, self.lastDownloadTime,
+                  self.numPages, self.totalDownloads, self.totalSize))
     
     def downloadSq(self, imgList):
         """ 
@@ -89,16 +104,19 @@ class AlphaDownloader:
         if name is None:
             name = os.path.basename(link).rstrip('.jpg')
         try:
-            image = self.downloadSession.get(link)
-            image.raise_for_status()
+            image = requests.get(link, headers = self.headers)
+            #image = self.downloadSession.get(link)
+            image.raise_for_status();                                   downloadLogger.info(f'{image.status_code = }')
         except Exception as exc:
-            raise ImageDownloadError(link, exc)
+            raise ImageDownloadError(link) from exc
 
         imgfilename = os.path.join(self.downloadDir, name + '.jpg')
         downloadLogger.info(f'{imgfilename = }')
         with open(imgfilename, 'wb') as imgfile:
             for chunk in image.iter_content(self.chunksize):
                 imgfile.write(chunk)
+        if self.trace:
+            print(f'Downloaded: {name}...')
         self.numDownloaded += 1
 
     def fetchLinks(self, start, stop=None, step=1):
@@ -115,9 +133,9 @@ class AlphaDownloader:
             pageUrl  = self.queryStr % dict(searchKey = self.searchKey, pageNo = pageNum);  downloadLogger.info(f'{pageUrl = }')
             try:
                 pageResponse = self.downloadSession.get(pageUrl)
-                pageResponse.raise_for_status()
+                pageResponse.raise_for_status();                                   downloadLogger.info(f'{pageResponse.status_code = }')
             except Exception as exc:
-                raise MainPageError(pageNum, exc)
+                raise MainPageError(pageNum) from None
             # parse and get the image links
             mainPageSoup = bs4.BeautifulSoup(pageResponse.text, 'lxml')
             imageTags = mainPageSoup.select('img.img-responsive');                 downloadLogger.debug(f'{pageUrl = } {len(imageTags) = }')
@@ -128,5 +146,5 @@ class AlphaDownloader:
                 yield imageName, imageLink
             
 if __name__ == '__main__':
-    AlphaDownloader('ironman').startDownload()
+    AlphaDownloader('ironman', 30, '/tmp/alphaWall', trace=True).startDownload()
 
