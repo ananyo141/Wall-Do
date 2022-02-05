@@ -26,6 +26,7 @@ class AlphaDownloader:
                       'AppleWebKit/537.36 (KHTML, like Gecko) '
                       'Chrome/72.0.3626.28 Safari/537.36'
     }
+    prefixes = ('Movie ', 'Video ', 'Comics ')
     chunksize = 10000000
     # For current session (total)
     totalSize = 0
@@ -71,21 +72,26 @@ class AlphaDownloader:
         " toplevel method for starting download "
         start = time.time()
         ImgPerThread = 5
+        self.mutex = threading.Lock()
 
-        threads = []
-        imgArg  = []
-        self.numPages = 1
-        while self.numDownloaded < self.numImages:
+        threads  = []
+        imgArg   = []
+        finished = False
+        self.numPages, imgLinksFetched = 1, 0 
+        while not finished:
             for imgTuple in self.fetchLinks(self.numPages):
-                if self.numDownloaded >= self.numImages:
+                if imgLinksFetched >= self.numImages:
+                    finished = True
                     break
                 imgArg.append(imgTuple)
-                if len(imgArg) == ImgPerThread:
+                currentImagesFetched = len(imgArg)
+                if currentImagesFetched == ImgPerThread:
                     thread = threading.Thread(target=self.downloadSq, args=(imgArg,))
                     threads.append(thread)
                     thread.start();             downloadLogger.info(f'{len(imgArg) = }')
                     imgArg = []
-            self.numPages += 1
+            imgLinksFetched += currentImagesFetched
+            self.numPages   += 1
 
             downloadLogger.debug(f'{self.numDownloaded = }')
             downloadLogger.debug(f'{self.numDownloaded < self.numImages = }')
@@ -118,28 +124,28 @@ class AlphaDownloader:
         " download given image link "
         if name is None:
             name = os.path.basename(link).rstrip('.jpg')
-        try:
-            image = self.downloadSession.get(link)
-            image.raise_for_status();                                   downloadLogger.info(f'{image.status_code = }')
-        except Exception as exc:
-            downloadLogger.critical(f'Error saving image: {link}\n{str(exc)}')
-            return
-
         imgfilename = os.path.join(self.downloadDir, name + '.jpg');    downloadLogger.info(f'{imgfilename = }')
         if os.path.exists(imgfilename):
             downloadLogger.warning(f'{imgfilename} already exists; possible bug')
             return
 
-        #assert not os.path.exists(imgfilename), "Attempt to download existing image"
+        try:
+            image = self.downloadSession.get(link)
+            image.raise_for_status();                                   downloadLogger.info(f'{image.status_code = }')
+        except Exception as exc:
+            downloadLogger.error(f'Error saving image: {link}\n{str(exc)}')
+            return
 
+        # save downloaded image
         with open(imgfilename, 'wb') as imgfile:
             for chunk in image.iter_content(self.chunksize):
                 imgfile.write(chunk)
 
-        imgSize = os.path.getsize(imgfilename)
-        self.downloadSize  += imgSize
-        self.totalSize     += imgSize
-        self.numDownloaded += 1
+        with self.mutex:
+            imgSize = os.path.getsize(imgfilename)
+            self.downloadSize  += imgSize
+            self.totalSize     += imgSize
+            self.numDownloaded += 1
 
         if self.trace:
             print(f'Downloaded: {name}...')
@@ -160,7 +166,7 @@ class AlphaDownloader:
                 pageResponse = self.downloadSession.get(pageUrl)
                 pageResponse.raise_for_status();                                   downloadLogger.info(f'{pageResponse.status_code = }')
             except Exception as exc:
-                downloadLogger.critical(f'Error Downloading Page: {pageNum}\n{str(exc)}')
+                downloadLogger.error(f'Error Downloading Page: {pageNum}\n{str(exc)}')
                 continue
             # parse and get the image links
             mainPageSoup = bs4.BeautifulSoup(pageResponse.text, 'lxml')
@@ -169,6 +175,12 @@ class AlphaDownloader:
             # generate imagename, imagelink for every image found
             for imageTag in imageTags:
                 imageName = imageTag.get('alt').rstrip(' HD Wallpaper | Background Image')[:50]
+                # strip unnecessary prefixes (if present)
+                for prefix in self.prefixes:
+                    if imageName.startswith(prefix):
+                        imageName = imageName.lstrip(prefix)
+                        break
+
                 imageLink = imageTag.get('src').replace('thumbbig-', '')
                 yield imageName, imageLink
 
@@ -181,24 +193,26 @@ class AlphaDownloader:
 GUI oriented Downloader that updates status with tk variables
 """
 def DownloaderWithVar(AlphaDownloader):
-    def __init__(self, searchKey, numImages, downloadDir=os.curdir,
-                       progressVar=None, currentVar=None):
-        AlphaDownloader.__init__(searchKey, numImages, downloadDir, trace=False)
-        self.reset(searchKey, numImages, downloadDir, progressVar, currentVar)
+    def __init__(self, *args, progressVar=None, currentVar=None, **kw):
+        AlphaDownloader.__init__(self, *args, **kw)
+        self.reset(*args, progressVar=progressVar, currentVar=currentVar, **kw)
 
-    def reset(self, searchKey, numImages, downloadDir=os.curdir,
-                       progressVar=None, currentVar=None):
-        AlphaDownloader.reset(self, searchKey, numImages, downloadDir, trace=False)
+    def reset(self, *args, progressVar=None, currentVar=None, **kw):
+        AlphaDownloader.reset(self, *args, **kw)
+        self.trace = False      # disable console logging
         self.progressVar = progressVar
         self.currentVar  = currentVar
 
-    def downloadImage(self, link, name=None):
-        AlphaDownloader.downloadImage(self, link, name)
-        if self.progressVar:
-            self.progressVar.set((self.numDownloaded // self.numImages) * 100)
-        if self.currentVar:
-            self.currentVar.set(f'Downloaded {link}...')
+    def downloadImage(self, *args, **kw):
+        AlphaDownloader.downloadImage(self, *args, **kw)
+        with self.mutex:
+            if self.progressVar:
+                self.progressVar.set((self.numDownloaded // self.numImages) * 100)
+            if self.currentVar:
+                self.currentVar.set(f'Downloaded {link}...')
 
 if __name__ == '__main__':
-    AlphaDownloader('ironman', 30, '/tmp/alphaWall', trace=True).startDownload()
+    AlphaDownloader('ironman', 50, '/tmp/alphaWall', trace=True).startDownload()
+    #DownloaderWithVar('ironman', 30,'/tmp/alphaWall').startDownload()
+    #obj = DownloaderWithVar()
 
