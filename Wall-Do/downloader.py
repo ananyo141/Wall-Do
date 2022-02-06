@@ -7,7 +7,7 @@
 
 """
 
-import os, sys, logging, time
+import os, sys, logging, time, random
 import threading, requests, bs4
 from logger import mainlogger
 from exceptions import InvalidDownloadNum
@@ -57,17 +57,6 @@ class AlphaDownloader:
         self.downloadSize  = 0
         self.lastDownloadTime = None
 
-    """
-    ********************* Stats: *********************
-    Current Run:
-    Downloaded: 112, Time taken: 55 secs
-    Number of Pages: 11, Downloaded: 112.000000 MB
-
-    Session Details:
-    Total Downloads: 289, Total Size: 289.585 MB
-    """
-    # FIXME: downloading beyond given limit
-    # FIXME: duplicate downloads
     def startDownload(self):
         " toplevel method for starting download "
         start = time.time()
@@ -77,8 +66,9 @@ class AlphaDownloader:
         threads  = []
         imgArg   = []
         finished = False
-        self.numPages, imgLinksFetched = 1, 0 
+        self.numPages = imgLinksFetched = 0 
         while not finished:
+            self.numPages += 1
             for imgTuple in self.fetchLinks(self.numPages):
                 if imgLinksFetched >= self.numImages:
                     finished = True
@@ -87,15 +77,10 @@ class AlphaDownloader:
                 currentImagesFetched = len(imgArg)
                 if currentImagesFetched == ImgPerThread:
                     thread = threading.Thread(target=self.downloadSq, args=(imgArg,))
-                    threads.append(thread)
-                    thread.start();                                 downloadLogger.info(f'{len(imgArg) = }')
-                    imgArg = []
-                    imgLinksFetched += currentImagesFetched
-            self.numPages += 1
-
-            downloadLogger.debug(f'{self.numDownloaded = }')
-            downloadLogger.debug(f'{self.numDownloaded < self.numImages = }')
-            downloadLogger.info(f'{self.numPages = }')
+                    threads.append(thread);                                 downloadLogger.info(f'{len(imgArg) = }')
+                    thread.start();                                         downloadLogger.debug(f'{imgLinksFetched = }')
+                    imgArg = [];                                            downloadLogger.debug(f'{self.numPages = }')
+                    imgLinksFetched += currentImagesFetched;                downloadLogger.debug(f'{imgLinksFetched < self.numImages = }')
 
         for thread in threads: thread.join()
         self.lastDownloadTime = time.time() - start
@@ -104,10 +89,10 @@ class AlphaDownloader:
         if self.trace:
             print('\n', ' Stats: '.center(50, '*'))
             print("Current Run:\n"
-                  "Downloaded: %d, Time taken: %d secs\n"
-                  "Number of Pages: %d, Downloaded: %f MB\n\n"
+                  "Images Downloaded: %d, Time taken: %d secs\n"
+                  "Number of Pages: %d, Downloaded: %.3f MB\n\n"
                   "Session Details:\n"
-                  "Total Downloads: %d, Total Size: %.3f MB\n"
+                  "Total Images: %d, Total Size: %.3f MB\n"
                   % (self.numDownloaded, self.lastDownloadTime,
                      self.numPages, self.bytesToMiB(self.downloadSize),
                      self.totalDownloads, self.bytesToMiB(self.totalSize)))
@@ -124,10 +109,10 @@ class AlphaDownloader:
         " download given image link "
         if name is None:
             name = os.path.basename(link).rstrip('.jpg')
-        imgfilename = os.path.join(self.downloadDir, name + '.jpg');    downloadLogger.info(f'{imgfilename = }')
-        if os.path.exists(imgfilename):
-            downloadLogger.warning(f'{imgfilename} already exists; possible bug')
-            return
+        imgfilename = os.path.join(self.downloadDir, name);             downloadLogger.info(f'{imgfilename = }')
+        if os.path.exists(imgfilename + '.jpg'):
+            imgfilename += str(random.randint(1,100))
+        imgfilename += '.jpg'
 
         try:
             image = self.downloadSession.get(link)
@@ -193,14 +178,14 @@ class AlphaDownloader:
 """
 GUI oriented Downloader that updates status with tk variables
 """
-def DownloaderWithVar(AlphaDownloader):
+class DownloaderWithVar(AlphaDownloader):
     def __init__(self, *args, progressVar=None, currentVar=None, **kw):
         AlphaDownloader.__init__(self, *args, **kw)
-        self.reset(*args, progressVar=progressVar, currentVar=currentVar, **kw)
+        self.reset(progressVar=progressVar, currentVar=currentVar)
 
     def reset(self, *args, progressVar=None, currentVar=None, **kw):
         AlphaDownloader.reset(self, *args, **kw)
-        self.trace = False      # disable console logging
+        self.trace = False                  # mandatorily disable console logging
         self.progressVar = progressVar
         self.currentVar  = currentVar
 
@@ -215,5 +200,4 @@ def DownloaderWithVar(AlphaDownloader):
 if __name__ == '__main__':
     AlphaDownloader('ironman', 50, '/tmp/alphaWall', trace=True).startDownload()
     #DownloaderWithVar('ironman', 30,'/tmp/alphaWall').startDownload()
-    #obj = DownloaderWithVar()
 
