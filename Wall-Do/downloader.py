@@ -88,10 +88,10 @@ class AlphaDownloader:
                 if currentImagesFetched == ImgPerThread:
                     thread = threading.Thread(target=self.downloadSq, args=(imgArg,))
                     threads.append(thread)
-                    thread.start();             downloadLogger.info(f'{len(imgArg) = }')
+                    thread.start();                                 downloadLogger.info(f'{len(imgArg) = }')
                     imgArg = []
-            imgLinksFetched += currentImagesFetched
-            self.numPages   += 1
+                    imgLinksFetched += currentImagesFetched
+            self.numPages += 1
 
             downloadLogger.debug(f'{self.numDownloaded = }')
             downloadLogger.debug(f'{self.numDownloaded < self.numImages = }')
@@ -161,7 +161,8 @@ class AlphaDownloader:
         downloadLogger.info(f'{start = }, {stop = }, {step = }')
         for pageNum in range(start, stop, step):
             # fetch page
-            pageUrl  = self.queryStr % dict(searchKey = self.searchKey, pageNo = pageNum);  downloadLogger.info(f'{pageUrl = }')
+            pageUrl  = self.queryStr % \
+                              dict(searchKey = self.searchKey, pageNo = pageNum);  downloadLogger.info(f'{pageUrl = }')
             try:
                 pageResponse = self.downloadSession.get(pageUrl)
                 pageResponse.raise_for_status();                                   downloadLogger.info(f'{pageResponse.status_code = }')
