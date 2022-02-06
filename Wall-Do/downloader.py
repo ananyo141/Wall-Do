@@ -7,7 +7,7 @@
 
 """
 
-import os, sys, logging, time, random
+import os, sys, logging, time
 import threading, requests, bs4
 from logger import mainlogger
 from exceptions import InvalidDownloadNum
@@ -105,21 +105,22 @@ class AlphaDownloader:
         for imgname, imglink in imgList:
             self.downloadImage(imglink, imgname)
 
-    def downloadImage(self, link, name=None):
+    def downloadImage(self, link, name=''):
         " download given image link "
-        if name is None:
-            name = os.path.basename(link).rstrip('.jpg')
-        imgfilename = os.path.join(self.downloadDir, name);             downloadLogger.info(f'{imgfilename = }')
-        if os.path.exists(imgfilename + '.jpg'):
-            imgfilename += str(random.randint(1,100))
-        imgfilename += '.jpg'
-
+        # Use the trailing id of the image link: ('1149.jpg')
+        # to make the image name truly unique
+        imgfilename = os.path.join(self.downloadDir,
+                            name + '_' + os.path.basename(link))
         try:
             image = self.downloadSession.get(link)
-            image.raise_for_status();                                   downloadLogger.info(f'{image.status_code = }')
+            image.raise_for_status()
         except Exception as exc:
             downloadLogger.error(f'Error saving image: {link}\n{str(exc)}')
             return
+        
+        # final check to test imagename logic
+        if os.path.exists(imgfilename):
+            downloadLogger.warning(f'{imgfilename} exists; possible bug')
 
         # save downloaded image
         with open(imgfilename, 'wb') as imgfile:
@@ -173,7 +174,7 @@ class AlphaDownloader:
     @staticmethod
     def bytesToMiB(sizeInBy):
         " Return size in bytes to MiB "
-        return sizeInBy / (1024 * 1000)
+        return sizeInBy / (1024 * 1024)
 
 """
 GUI oriented Downloader that updates status with tk variables
@@ -196,8 +197,4 @@ class DownloaderWithVar(AlphaDownloader):
                 self.progressVar.set((self.numDownloaded // self.numImages) * 100)
             if self.currentVar:
                 self.currentVar.set(f'Downloaded {link}...')
-
-if __name__ == '__main__':
-    AlphaDownloader('ironman', 50, '/tmp/alphaWall', trace=True).startDownload()
-    #DownloaderWithVar('ironman', 30,'/tmp/alphaWall').startDownload()
 
