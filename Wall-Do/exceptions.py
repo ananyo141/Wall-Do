@@ -18,3 +18,6 @@ class InvalidDownloadNum(DownloadError):
     def __init__(self, num):
         DownloadError.__init__(self, f'Invalid number to download: {num}')
 
+class MaxRetriesCrossed(DownloadError):
+    " Maximum retries crossed and still failed to download all images "
+

@@ -1,16 +1,19 @@
 """
  This module contains all the required backend stuff (logic)
- required to handle and download from website.
+ required to handle and download from the wallpaper website.
 
  URL signature looks like:
  https://wall.alphacoders.com/search.php?search={searchKey}&page={PageNo}
+ The website may internally store some popular keywords like spiderman
+ in collections and serve them with collection ids, need to look out for those
+ variations.
 
 """
 
 import os, sys, logging, time
 import threading, requests, bs4
 from logger import mainlogger
-from exceptions import InvalidDownloadNum
+from exceptions import InvalidDownloadNum, MaxRetriesCrossed
 
 # get module logger
 downloadLogger = logging.getLogger('main.downloader')
@@ -57,32 +60,22 @@ class AlphaDownloader:
         self.downloadSize  = 0
         self.lastDownloadTime = None
 
-    def startDownload(self):
-        " toplevel method for starting download "
+    def startDownload(self, maxretries=4):
+        """ 
+        toplevel method for starting download, handle and check actual
+        download success 
+
+        """
+        MaxRetries = maxretries
         start = time.time()
-        ImgPerThread = 5
         self.mutex = threading.Lock()
+        self._queryStrServed = None     # query string returned by website (may be collection id)
 
-        threads  = []
-        imgArg   = []
-        finished = False
-        self.numPages = imgLinksFetched = 0 
-        while not finished:
-            self.numPages += 1
-            for imgTuple in self.fetchLinks(self.numPages):
-                if imgLinksFetched >= self.numImages:
-                    finished = True
-                    break
-                imgArg.append(imgTuple)
-                currentImagesFetched = len(imgArg)
-                if currentImagesFetched == ImgPerThread:
-                    thread = threading.Thread(target=self.downloadSq, args=(imgArg,))
-                    threads.append(thread);                                 downloadLogger.info(f'{len(imgArg) = }')
-                    thread.start();                                         downloadLogger.debug(f'{imgLinksFetched = }')
-                    imgArg = [];                                            downloadLogger.debug(f'{self.numPages = }')
-                    imgLinksFetched += currentImagesFetched;                downloadLogger.debug(f'{imgLinksFetched < self.numImages = }')
+        self.numPages = retries = 0
+        while self.numDownloaded < self.numImages and retries < MaxRetries:
+            self._runDownload()
+            retries += 1
 
-        for thread in threads: thread.join()
         self.lastDownloadTime = time.time() - start
         self.totalDownloads += self.numDownloaded
 
@@ -97,13 +90,44 @@ class AlphaDownloader:
                      self.numPages, self.bytesToMiB(self.downloadSize),
                      self.totalDownloads, self.bytesToMiB(self.totalSize)))
 
-    def downloadSq(self, imgList):
+        if retries >= MaxRetries and self.numDownloaded < self.numImages:
+            raise MaxRetriesCrossed("Max Retries; check log for error details")
+
+    def _runDownload(self):
         """
-        Target Function for threading
-        Downloads sequentially without threading
+        Download Logic;
+        Perform Download assuming every link works, doesn't check if the actual number of download
+        satisfies the required number given
+        Not to be invoked directly, use wrapper method startDownload()
+
         """
-        for imgname, imglink in imgList:
-            self.downloadImage(imglink, imgname)
+        def downloadSq(imgList):
+            " Target Function for threading "
+            for imgname, imglink in imgList:
+                self.downloadImage(imglink, imgname)
+
+        ImgPerThread = 5
+        threads  = []
+        imgArg   = []
+        finished = False
+        imgLinksFetched = 0 
+
+        while not finished:
+            self.numPages += 1
+            for imgTuple in self.fetchLinks(self.numPages):
+                if imgLinksFetched >= self.numImages:
+                    finished = True
+                    break
+                imgArg.append(imgTuple)
+                currentImagesFetched = len(imgArg)
+                if currentImagesFetched == ImgPerThread:
+                    thread = threading.Thread(target=downloadSq, args=(imgArg,))
+                    threads.append(thread);                                 downloadLogger.info(f'{len(imgArg) = }')
+                    thread.start();                                         downloadLogger.debug(f'{imgLinksFetched = }')
+                    imgArg = [];                                            downloadLogger.debug(f'{self.numPages = }')
+                    imgLinksFetched += currentImagesFetched
+
+        for thread in threads: thread.join()
 
     def downloadImage(self, link, name=''):
         " download given image link "
@@ -111,16 +135,19 @@ class AlphaDownloader:
         # to make the image name truly unique
         imgfilename = os.path.join(self.downloadDir,
                             name + '_' + os.path.basename(link))
+
+        # Abort Download (return) if:
+        # 1) Filename exists,
+        if os.path.exists(imgfilename):
+            downloadLogger.warning(f'{imgfilename} exists; possible bug')
+            return
         try:
             image = self.downloadSession.get(link)
             image.raise_for_status()
+        # 2) Download error
         except Exception as exc:
             downloadLogger.error(f'Error saving image: {link}\n{str(exc)}')
             return
-        
-        # final check to test imagename logic
-        if os.path.exists(imgfilename):
-            downloadLogger.warning(f'{imgfilename} exists; possible bug')
 
         # save downloaded image
         with open(imgfilename, 'wb') as imgfile:
@@ -146,9 +173,11 @@ class AlphaDownloader:
             stop = start + 1
         downloadLogger.info(f'{start = }, {stop = }, {step = }')
         for pageNum in range(start, stop, step):
+            # construct page url, if first pass, use base query, else fetched
+            # query string
+            pageUrl = self._queryStrServed % dict(pageNo=pageNum) if self._queryStrServed else \
+                    self.queryStr % dict(searchKey=self.searchKey, pageNo=start);  downloadLogger.info(f'{pageUrl = }')
             # fetch page
-            pageUrl  = self.queryStr % \
-                              dict(searchKey = self.searchKey, pageNo = pageNum);  downloadLogger.info(f'{pageUrl = }')
             try:
                 pageResponse = self.downloadSession.get(pageUrl)
                 pageResponse.raise_for_status();                                   downloadLogger.info(f'{pageResponse.status_code = }')
@@ -157,6 +186,15 @@ class AlphaDownloader:
                 continue
             # parse and get the image links
             mainPageSoup = bs4.BeautifulSoup(pageResponse.text, 'lxml')
+
+            # get the served query string (may give a collection id for
+            # selected keywords)
+            if self._queryStrServed is None:
+                pageUrl = mainPageSoup.select('div.page_container')[0].get('data-url')
+                pageUrl += f'&page=%(pageNo)d'           # append the page required for the next fetch
+                self._queryStrServed = pageUrl
+            downloadLogger.debug(f'{pageUrl = }')
+
             # get the image elements with class='img-responsive'
             imageTags = mainPageSoup.select('img.img-responsive');                 downloadLogger.debug(f'{len(imageTags) = }')
             # generate imagename, imagelink for every image found
