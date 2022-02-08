@@ -21,3 +21,6 @@ class InvalidDownloadNum(DownloadError):
 class MaxRetriesCrossed(DownloadError):
     " Maximum retries crossed and still failed to download all images "
 
+class SearchReturnedNone(DownloadError):
+    " Website returned none found for given search key "
+

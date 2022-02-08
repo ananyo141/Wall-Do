@@ -13,7 +13,8 @@
 import os, sys, logging, time
 import threading, requests, bs4
 from logger import mainlogger
-from exceptions import InvalidDownloadNum, MaxRetriesCrossed
+from exceptions import (InvalidDownloadNum, MaxRetriesCrossed,
+                SearchReturnedNone)
 
 # get module logger
 downloadLogger = logging.getLogger('main.downloader')
@@ -60,7 +61,7 @@ class AlphaDownloader:
         self.downloadSize  = 0
         self.lastDownloadTime = None
 
-    def startDownload(self, maxretries=4):
+    def startDownload(self, maxretries=4, imgPerThread=5):
         """ 
         toplevel method for starting download, handle and check actual
         download success 
@@ -73,7 +74,7 @@ class AlphaDownloader:
 
         self.numPages = retries = 0
         while self.numDownloaded < self.numImages and retries < MaxRetries:
-            self._runDownload()
+            self._runDownload(imgPerThread)
             retries += 1
 
         self.lastDownloadTime = time.time() - start
@@ -93,7 +94,7 @@ class AlphaDownloader:
         if retries >= MaxRetries and self.numDownloaded < self.numImages:
             raise MaxRetriesCrossed("Max Retries; check log for error details")
 
-    def _runDownload(self):
+    def _runDownload(self, ImgPerThread):
         """
         Download Logic;
         Perform Download assuming every link works, doesn't check if the actual number of download
@@ -106,7 +107,6 @@ class AlphaDownloader:
             for imgname, imglink in imgList:
                 self.downloadImage(imglink, imgname)
 
-        ImgPerThread = 5
         threads  = []
         imgArg   = []
         finished = False
@@ -175,8 +175,10 @@ class AlphaDownloader:
         for pageNum in range(start, stop, step):
             # construct page url, if first pass, use base query, else fetched
             # query string
-            pageUrl = self._queryStrServed % dict(pageNo=pageNum) if self._queryStrServed else \
-                    self.queryStr % dict(searchKey=self.searchKey, pageNo=start);  downloadLogger.info(f'{pageUrl = }')
+            pageInfoDict = dict(searchKey=self.searchKey, pageNo=pageNum)
+            pageUrl = self._queryStrServed % pageInfoDict \
+                            if self._queryStrServed \
+                            else self.queryStr % pageInfoDict;                                  downloadLogger.info(f'{pageUrl = }')
             # fetch page
             try:
                 pageResponse = self.downloadSession.get(pageUrl)
@@ -190,7 +192,10 @@ class AlphaDownloader:
             # get the served query string (may give a collection id for
             # selected keywords)
             if self._queryStrServed is None:
-                pageUrl = mainPageSoup.select('div.page_container')[0].get('data-url')
+                try:
+                    pageUrl = mainPageSoup.select('div.page_container')[0].get('data-url')
+                except IndexError:
+                    raise SearchReturnedNone("Target Not found") from None
                 pageUrl += f'&page=%(pageNo)d'           # append the page required for the next fetch
                 self._queryStrServed = pageUrl
             downloadLogger.debug(f'{pageUrl = }')
