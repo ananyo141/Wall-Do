@@ -24,3 +24,12 @@ class MaxRetriesCrossed(DownloadError):
 class SearchReturnedNone(DownloadError):
     " Website returned none found for given search key "
 
+# Exception Classes for GUI components
+class GuiError(Exception):
+    " Base Exception Class for GUI "
+
+class TopLevelWidgetsOnly(GuiError):
+    """ 
+    Error class that require the widget to be
+    passed to be a toplevel tk widget 
+    """
