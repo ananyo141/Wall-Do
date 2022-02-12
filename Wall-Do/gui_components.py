@@ -73,6 +73,7 @@ class MakeMenu:
 # Reusable Frame components
 # Make up the gui input body
 class GuiInput(Frame):
+    maxFieldWidth = max(map(len, ('Directory: ', 'search key: ', 'image number: ')))
     entryWidgetWidth = 30
     padding = dict(
         padx=4,
@@ -81,7 +82,8 @@ class GuiInput(Frame):
     def __init__(self, parent, **kw):
         Frame.__init__(self, master=parent, **kw)
         self.dirVar = StringVar(value=os.getcwd())
-        self.searchVar = StringVar(value='Enter Search Key here')
+        self.searchVarPlaceholder = 'Enter Search Key here'
+        self.searchVar = StringVar(value=self.searchVarPlaceholder)
         self.numImageVar = IntVar(value=30)
 
         self.makeDirInput()
@@ -96,22 +98,37 @@ class GuiInput(Frame):
 
         dirFrame = Frame(self)
         dirFrame.pack(expand=True, fill=BOTH)
-        Label(dirFrame, text='Directory:').pack(side=LEFT, **self.padding)
+        Label(dirFrame, text='Directory:', width=self.maxFieldWidth).pack(side=LEFT, **self.padding)
         Entry(dirFrame, textvariable=self.dirVar, 
                 width=self.entryWidgetWidth).pack(side=LEFT, expand=True, fill=X, **self.padding)
 
         Button(dirFrame, text='Browse', command=chooseDir, 
-                width=7).pack(side=RIGHT, **self.padding)
+                width=7).pack(side=RIGHT,  **self.padding)
 
     def makeSearchInput(self):
-        (searchFrame := Frame(self)).pack(expand=True, fill=BOTH)
-        Label(searchFrame, text='Search: ').pack(side=LEFT, **self.padding)
-        Entry(searchFrame, textvariable=self.makeSearchInput,
-            width=self.entryWidgetWidth).pack(side=LEFT, **self.padding)
+        def clearPlaceholder(event):
+            if self.searchVar.get() == self.searchVarPlaceholder:
+                searchEnt.delete('0', 'end')
 
+        (searchFrame := Frame(self)).pack(expand=True, fill=BOTH)
+        Label(searchFrame, text='Search Key: ', width=self.maxFieldWidth).pack(side=LEFT, **self.padding)
+        searchEnt = Entry(searchFrame, textvariable=self.searchVar,
+            width=self.entryWidgetWidth)
+        searchEnt.bind('<FocusIn>', clearPlaceholder)
+        searchEnt.pack(side=LEFT, **self.padding)
 
     def makeNumImageInput(self):
-        pass
+        numberFrame = Frame(self)
+        numberFrame.pack(expand=True, fill=BOTH)
+
+        Label(numberFrame, text='Image Number: ', width=self.maxFieldWidth).pack(side=LEFT, **self.padding)
+        Entry(numberFrame, textvariable=self.numImageVar, width=self.entryWidgetWidth).pack(side=LEFT, **self.padding)
+
+    def getValues(self):
+        try:
+            return (self.dirVar.get(), self.searchVar.get(), self.numImageVar.get())
+        except TclError:
+            msgb.showerror(title='Invalid Input', message='Please enter integer value for number of images')
 
 # Downloader Info
 class GuiDetails(Frame):
@@ -125,5 +142,6 @@ if __name__ == '__main__':
     root = Tk()
     root.title("Tester")
     MakeMenu(root)
-    GuiInput(root).pack(expand=True, fill=BOTH)
+    (inp := GuiInput(root)).pack(expand=True, fill=BOTH)
+    Button(root, text='Fetch', command=lambda: print(inp.getValues())).pack()
     mainloop()
