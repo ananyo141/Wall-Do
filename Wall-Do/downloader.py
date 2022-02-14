@@ -35,6 +35,11 @@ class AlphaDownloader:
     # For current session (total)
     totalSize = 0
     totalDownloads = 0
+    printFormat = ("Current Run:\n"
+                  "Images Downloaded: %(numDownloaded)d, Time taken: %(lastDownloadTime)d secs\n"
+                  "Number of Pages: %(numPages)d, Downloaded: %(downloadSize).3f MB\n\n"
+                  "Session Details:\n"
+                  "Total Images: %(totalDownloads)d, Total Size: %(totalSize).3f MB\n")
 
     def __init__(self, searchKey, numImages, downloadDir=os.curdir, trace=False):
         " initialize attributes for object "
@@ -61,7 +66,7 @@ class AlphaDownloader:
         self.downloadSize  = 0
         self.lastDownloadTime = None
 
-    def startDownload(self, maxretries=4, imgPerThread=5):
+    def startDownload(self, maxretries=2, imgPerThread=5):
         """ 
         toplevel method for starting download, handle and check actual
         download success 
@@ -82,14 +87,14 @@ class AlphaDownloader:
 
         if self.trace:
             print('\n', ' Stats: '.center(50, '*'))
-            print("Current Run:\n"
-                  "Images Downloaded: %d, Time taken: %d secs\n"
-                  "Number of Pages: %d, Downloaded: %.3f MB\n\n"
-                  "Session Details:\n"
-                  "Total Images: %d, Total Size: %.3f MB\n"
-                  % (self.numDownloaded, self.lastDownloadTime,
-                     self.numPages, self.bytesToMiB(self.downloadSize),
-                     self.totalDownloads, self.bytesToMiB(self.totalSize)))
+            print(self.printFormat % dict(
+                numDownloaded    = self.numDownloaded,
+                lastDownloadTime = self.lastDownloadTime,
+                numPages         = self.numPages,
+                downloadSize     = self.self.bytesToMiB(self.downloadSize),
+                totalDownloads   = self.totalDownloads,
+                totalSize        = self.bytesToMiB(self.totalSize),
+            ))
 
         if retries >= MaxRetries and self.numDownloaded < self.numImages:
             raise MaxRetriesCrossed("Max Retries; check log for error details")
@@ -240,4 +245,3 @@ class DownloaderWithVar(AlphaDownloader):
                 self.progressVar.set((self.numDownloaded // self.numImages) * 100)
             if self.currentVar:
                 self.currentVar.set(f'Downloaded {link}...')
-

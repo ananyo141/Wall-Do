@@ -14,7 +14,7 @@ from exceptions import TopLevelWidgetsOnly
 
 # Create the menu for the main window; may need to use the more
 # specialized menu framework if menu needs to be created in other
-# windows too
+# windows too, subclass to define the handlers in main program
 class MakeMenu:
     def __init__(self, topWidget):
         if not isinstance(topWidget, (Toplevel, Tk)):
@@ -73,7 +73,8 @@ class MakeMenu:
 # Reusable Frame components
 # Make up the gui input body
 class GuiInput(Frame):
-    maxFieldWidth = max(map(len, ('Directory: ', 'search key: ', 'image number: ')))
+    fields = ('Directory: ', 'Search Key: ', 'Image Number: ')
+    maxFieldWidth = max(map(len, fields))
     entryWidgetWidth = 30
     padding = dict(
         padx=4,
@@ -86,9 +87,21 @@ class GuiInput(Frame):
         self.searchVar = StringVar(value=self.searchVarPlaceholder)
         self.numImageVar = IntVar(value=30)
 
+        self.makeOptionMenu()
         self.makeDirInput()
         self.makeSearchInput()
         self.makeNumImageInput()
+    
+    def makeOptionMenu(self):
+        optionFrame = Frame(self)
+        optionFrame.pack(expand=True, fill=BOTH)
+
+        options = ('wall.alphacoders.com', 'Others')
+        self.optionMenuVar = StringVar()
+        Label(optionFrame, text='Website: ', width=self.maxFieldWidth).pack(side=LEFT, **self.padding)
+        opWidget = OptionMenu(optionFrame, self.optionMenuVar, 'https://wall.alphacoders.com', *options)
+        opWidget.config(state='disabled')
+        opWidget.pack(side=LEFT, fill=X, **self.padding)
     
     def makeDirInput(self):
         def chooseDir():
@@ -98,7 +111,7 @@ class GuiInput(Frame):
 
         dirFrame = Frame(self)
         dirFrame.pack(expand=True, fill=BOTH)
-        Label(dirFrame, text='Directory:', width=self.maxFieldWidth).pack(side=LEFT, **self.padding)
+        Label(dirFrame, text=self.fields[0], width=self.maxFieldWidth).pack(side=LEFT, **self.padding)
         Entry(dirFrame, textvariable=self.dirVar, 
                 width=self.entryWidgetWidth).pack(side=LEFT, expand=True, fill=X, **self.padding)
 
@@ -111,7 +124,7 @@ class GuiInput(Frame):
                 searchEnt.delete('0', 'end')
 
         (searchFrame := Frame(self)).pack(expand=True, fill=BOTH)
-        Label(searchFrame, text='Search Key: ', width=self.maxFieldWidth).pack(side=LEFT, **self.padding)
+        Label(searchFrame, text=self.fields[1], width=self.maxFieldWidth).pack(side=LEFT, **self.padding)
         searchEnt = Entry(searchFrame, textvariable=self.searchVar,
             width=self.entryWidgetWidth)
         searchEnt.bind('<FocusIn>', clearPlaceholder)
@@ -121,22 +134,54 @@ class GuiInput(Frame):
         numberFrame = Frame(self)
         numberFrame.pack(expand=True, fill=BOTH)
 
-        Label(numberFrame, text='Image Number: ', width=self.maxFieldWidth).pack(side=LEFT, **self.padding)
-        Entry(numberFrame, textvariable=self.numImageVar, width=self.entryWidgetWidth).pack(side=LEFT, **self.padding)
+        Label(numberFrame, text=self.fields[2], 
+            width=self.maxFieldWidth).pack(side=LEFT, **self.padding)
+        Entry(numberFrame, textvariable=self.numImageVar, 
+            width=self.entryWidgetWidth).pack(side=LEFT, **self.padding)
 
     def getValues(self):
-        try:
-            return (self.dirVar.get(), self.searchVar.get(), self.numImageVar.get())
-        except TclError:
-            msgb.showerror(title='Invalid Input', message='Please enter integer value for number of images')
+        searchKey = self.searchVar.get()
+        if not searchKey or searchKey == self.searchVarPlaceholder:
+            msgb.showerror(title='Required', message='Please Enter the search key')
+        else:
+            try:
+                return (self.dirVar.get(), searchKey, self.numImageVar.get())
+            except TclError:
+                msgb.showerror(title='Invalid Input', message='Please enter integer value for number of images')
+
 
 # Downloader Info
 class GuiDetails(Frame):
-    pass
+    """
+    A Subsection of the gui body that contains details about the
+    current download, Session details, size, etc.; Progress bar,
+    Label showing the current download image name, and 'Finished' if finished,
+    """
+    def __init__(self, parent=None, **kw):
+        Frame.__init__(self, parent, downloaderObj, **kw)
+        self.currentStatus       = StringVar()
+
+        self.displaySessionDetails()
+        self.displayProgressbar()
+        self.displayStatus()
+
+    def displaySessionDetails(self):
+        pass
+
+    def displayProgressbar(self):
+        Progressbar(self, length=100, mode='determinate', orient='horizontal')
+
+    def displayStatus(self):
+        pass
 
 # Image Viewer
 class GuiImgViewer(Frame):
-    pass
+    """
+    An Image viewer with a scrolled canvas at the center,
+    support thumb caching, opens the image in a new window, with cursor 'hand2',
+    and right click menu with options to open with system native app, delete,
+    delete all and select delete
+    """
 
 if __name__ == '__main__':
     root = Tk()
