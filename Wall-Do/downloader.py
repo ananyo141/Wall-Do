@@ -84,17 +84,18 @@ class AlphaDownloader:
 
         self.lastDownloadTime = time.time() - start
         self.totalDownloads += self.numDownloaded
-
-        if self.trace:
-            print('\n', ' Stats: '.center(50, '*'))
-            print(self.printFormat % dict(
+        self.sessionDict = dict(
                 numDownloaded    = self.numDownloaded,
                 lastDownloadTime = self.lastDownloadTime,
                 numPages         = self.numPages,
-                downloadSize     = self.self.bytesToMiB(self.downloadSize),
+                downloadSize     = self.bytesToMiB(self.downloadSize),
                 totalDownloads   = self.totalDownloads,
                 totalSize        = self.bytesToMiB(self.totalSize),
-            ))
+        )
+
+        if self.trace:
+            print('\n', ' Stats: '.center(50, '*'))
+            print(self.printFormat % self.sessionDict)
 
         if retries >= MaxRetries and self.numDownloaded < self.numImages:
             raise MaxRetriesCrossed("Max Retries; check log for error details")
@@ -228,13 +229,14 @@ class AlphaDownloader:
 GUI oriented Downloader that updates status with tk variables
 """
 class DownloaderWithVar(AlphaDownloader):
-    def __init__(self, *args, progressVar=None, currentVar=None, **kw):
+    def __init__(self, *args, sessionVar=None, progressVar=None, currentVar=None, **kw):
         AlphaDownloader.__init__(self, *args, **kw)
-        self.reset(progressVar=progressVar, currentVar=currentVar)
+        self.reset(*args, sessionVar=sessionVar, progressVar=progressVar, currentVar=currentVar, **kw)
 
-    def reset(self, *args, progressVar=None, currentVar=None, **kw):
+    def reset(self, *args, sessionVar=None, progressVar=None, currentVar=None, **kw):
         AlphaDownloader.reset(self, *args, **kw)
-        self.trace = False                  # mandatorily disable console logging
+        self.trace = False             # mandatorily disable console logging
+        self.sessionVar  = sessionVar
         self.progressVar = progressVar
         self.currentVar  = currentVar
 
@@ -245,3 +247,11 @@ class DownloaderWithVar(AlphaDownloader):
                 self.progressVar.set((self.numDownloaded // self.numImages) * 100)
             if self.currentVar:
                 self.currentVar.set(f'Downloaded {link}...')
+
+    def startDownload(self, **kw):
+        AlphaDownloader.startDownload(self, **kw)
+        if self.sessionVar:
+            self.sessionVar.set(self.printFormat % self.sessionDict)
+        if self.currentVar:
+            self.currentVar.set('Finished')
+

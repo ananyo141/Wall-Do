@@ -4,13 +4,18 @@
 
 """
 
-# Wildcard imports are fine as this module deals with only
+# Wildcard imports are fine as this module deals only with
 # tk widgets; use namespaces in the main script
-import sys, os
+import sys, os, logging
 from tkinter import *
 from tkinter.ttk import *
 from tkinter import messagebox as msgb, filedialog as fldg
+from PIL.ImageTk import Image, PhotoImage
 from exceptions import TopLevelWidgetsOnly
+from logger import mainlogger
+
+# Create logger
+guiLogger = logging.getLogger('main.gui')
 
 # Create the menu for the main window; may need to use the more
 # specialized menu framework if menu needs to be created in other
@@ -116,7 +121,7 @@ class GuiInput(Frame):
                 width=self.entryWidgetWidth).pack(side=LEFT, expand=True, fill=X, **self.padding)
 
         Button(dirFrame, text='Browse', command=chooseDir, 
-                width=7).pack(side=RIGHT,  **self.padding)
+                width=7).pack(side=RIGHT, **self.padding)
 
     def makeSearchInput(self):
         def clearPlaceholder(event):
@@ -149,7 +154,6 @@ class GuiInput(Frame):
             except TclError:
                 msgb.showerror(title='Invalid Input', message='Please enter integer value for number of images')
 
-
 # Downloader Info
 class GuiDetails(Frame):
     """
@@ -158,21 +162,29 @@ class GuiDetails(Frame):
     Label showing the current download image name, and 'Finished' if finished,
     """
     def __init__(self, parent=None, **kw):
-        Frame.__init__(self, parent, downloaderObj, **kw)
-        self.currentStatus       = StringVar()
+        Frame.__init__(self, parent, **kw)
+        self.sessionVar  = StringVar()
+        self.progressVar = IntVar()
+        self.currentVar  = StringVar()
 
         self.displaySessionDetails()
         self.displayProgressbar()
         self.displayStatus()
 
     def displaySessionDetails(self):
-        pass
+        Message(self, textvariable=self.sessionVar, 
+                width=300, font=('consolas', 14, 'normal'),
+        ).pack(expand=True,fill=BOTH)
 
     def displayProgressbar(self):
-        Progressbar(self, length=100, mode='determinate', orient='horizontal')
+        Progressbar(self, var=self.progressVar, length=100, 
+                    mode='determinate', orient='horizontal',
+        ).pack(fill=X)
 
     def displayStatus(self):
-        pass
+        Message(self, textvariable=self.currentVar,
+                width=300, font=('inconsolata', 20, 'bold'),
+        ).pack(expand=True, fill=X)
 
 # Image Viewer
 class GuiImgViewer(Frame):
@@ -182,6 +194,121 @@ class GuiImgViewer(Frame):
     and right click menu with options to open with system native app, delete,
     delete all and select delete
     """
+    def __init__(self, parent=None, imgdir=os.curdir, 
+                 canvsize=None, thumbsize=None, **kw):
+        Frame.__init__(self, parent, **kw)
+        self.imgdir = imgdir
+        self.makeImgViewer(canvsize=canvsize, thumbsize=thumbsize)
+        self.makeRightClickMenu()
+
+    def makeImgViewer(self, canvsize=None, thumbsize=None, colsize=6):
+        " Create the scrolled canvas with image thumbs "
+        if canvsize is None: canvsize = (300,300)           # default canvas size
+        if thumbsize is None: thumbsize = (90,60)           # default thumbsize
+        canvWidth, canvHeight = canvsize
+        canv = Canvas(self, width=canvWidth, height=canvHeight)
+
+        # Use thumb caching, display in viewer
+        imgObjs = self.makeThumbs(thumbsize, self.imgdir)
+
+        # Calculate canvas scrollregion
+        imgButtonWidth, imgButtonHeight = thumbsize
+        requiredCanvWidth = imgButtonWidth * colsize
+        requiredCanvHeight = imgButtonHeight * (len(imgObjs) // cosize)
+        canv.config(scrollregion=(0, 0, requiredCanvWidth, requiredCanvHeight))
+
+        # check if scrolls are needed
+        needXScroll = canvWidth  < requiredCanvWidth
+        needYScroll = canvHeight < requiredCanvHeight
+
+        # Display the images in the given directory
+        self.thumbsaves = []    # save thumbnails from being garbage collected
+        rowPixel = 0            # calculate pixel offset from top of canvas
+        while imgObjs:
+            colPixel = 0        # calculate pixel offset from left of canvas
+            imgRow, imgObjs = imgObjs[:colsize], imgObjs[colsize:]
+            for imgTuple in imgRow:
+                thumbPhoto = PhotoImage(imgTuple.obj)
+                handler = lambda path=imgTuple.path: \  # make lambda remember
+                          ImageOpener(self, path).mainloop()   # each path
+                imgButton = Button(canv, width=imgButtonWidth, image=thumbPhoto,
+                            height=imgButtonHeight, command=handler)
+                imgButton.pack()
+                canv.create_window(colPixel, rowPixel, window=imgButton,
+                    width=imgButtonWidth, height=imgButtonHeight, anchor=NW)
+                self.thumbsaves.append(thumbPhoto)
+
+                colPixel += imgButtonWidth
+            rowPixel += imgButtonHeight
+
+        if needYScroll:
+            yscroll = Scrollbar(self, command=canv.yview)
+            yscroll.pack(side=RIGHT, fill=Y)
+            canv.config(yscrollcommand=yscroll.set)
+        if needXScroll:
+            xscroll = Scrollbar(self, command=canv.xview, orient='horizontal')
+            xscroll.pack(side=BOTTOM, fill=X)
+            canv.config(xscrollcommand=xscroll.set)
+        canv.pack(expand=True, fill=BOTH)
+
+        # save canvas obj for further config by user
+        self.canvas = canv
+
+    def makeRightClickMenu(self):
+        pass
+
+    @staticmethod
+    def makeThumbs(thumbsize, imgdir=os.getcwd(), cachedir='.cache', enableCache=True):
+        """
+        Identify the images in the given directory and return
+        a named tuple of (imgpath, imgobj) resized to given size;
+        thumbsize is a tuple containing (width, height) of thumbnail
+        """
+        import mimetypes as mt
+        from collections import namedtuple
+        Thumb = namedtuple('Thumb', ['path', 'obj', 'width', 'height'])
+
+        cachedir = os.path.join(imgdir, cachedir)
+        os.makedirs(cachedir, exist_ok=True)
+        guiLogger.debug(f'{cachedir = }')
+        thumbNameSpec = '%(fname)s_thumb%(width)dx%(height)d%(ext)s'
+        thumblist = []
+
+        for filename in os.listdir(imgdir):
+            filepath = os.path.join(imgdir, filename)
+            ftype, enc = mt.guess_type(filepath)
+            # if file is a suitable image
+            if os.path.isfile(filepath) and ftype and \
+                ftype.split('/')[0] == 'image' and enc is None:
+                head, ext = os.path.splitext(filepath)
+                thumbname = thumbNameSpec % dict(
+                    fname=head, width=size[0], height=size[1], ext=ext)
+                thumbpath = os.path.join(cachedir, thumbname)
+
+                # if cache exists
+                if os.path.exists(thumbpath):
+                    thumbObj = Image.open(thumbpath)
+                # create cache
+                else:
+                    try:
+                        thumbObj = Image.open(filepath)
+                        thumbObj.thumb(size, Image.ANTIALIAS)
+                        if enableCache:
+                            thumbObj.save(thumbpath)
+                    except Exception as exc:
+                        guiLogger.error(f'Error creating thumbnail: {filepath}'
+                                f'\nTraceback Details: {str(exc)}')
+                        continue
+                # Path to original file and resized thumbnail image object
+                thumblist.append(Thumb(path=filepath, obj=thumbObj,
+                                       width=thumbObj.width,
+                                       height=thumbObj.height))
+        return thumblist
+
+# Toplevel Widget to display the image in a new window
+class ImageOpener(Toplevel):
+    def __init__(self, parent=None, **kw):
+        Toplevel.__init__(parent, **kw)
 
 if __name__ == '__main__':
     root = Tk()
@@ -190,3 +317,4 @@ if __name__ == '__main__':
     (inp := GuiInput(root)).pack(expand=True, fill=BOTH)
     Button(root, text='Fetch', command=lambda: print(inp.getValues())).pack()
     mainloop()
+
