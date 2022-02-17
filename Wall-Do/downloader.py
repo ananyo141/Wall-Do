@@ -155,8 +155,9 @@ class AlphaDownloader:
             downloadLogger.error(f'Error saving image: {link}\n{str(exc)}')
             return
 
-        # save downloaded image
-        with open(imgfilename, 'wb') as imgfile:
+        # save downloaded image (try to delegate os-specific filename
+        # restrictions to underlying platform by encoding filename)
+        with open(imgfilename.encode(), 'wb') as imgfile:
             for chunk in image.iter_content(self.chunksize):
                 imgfile.write(chunk)
 
@@ -182,9 +183,9 @@ class AlphaDownloader:
             # construct page url, if first pass, use base query, else fetched
             # query string
             pageInfoDict = dict(searchKey=self.searchKey, pageNo=pageNum)
-            pageUrl = self._queryStrServed % pageInfoDict \
+            pageUrl = self._queryStrServed + f'&page={pageNum}' \
                             if self._queryStrServed \
-                            else self.queryStr % pageInfoDict;                                  downloadLogger.info(f'{pageUrl = }')
+                            else self.queryStr % pageInfoDict;                     downloadLogger.info(f'{pageUrl = }')
             # fetch page
             try:
                 pageResponse = self.downloadSession.get(pageUrl)
@@ -202,7 +203,6 @@ class AlphaDownloader:
                     pageUrl = mainPageSoup.select('div.page_container')[0].get('data-url')
                 except IndexError:
                     raise SearchReturnedNone("Target Not found") from None
-                pageUrl += f'&page=%(pageNo)d'           # append the page required for the next fetch
                 self._queryStrServed = pageUrl
             downloadLogger.debug(f'{pageUrl = }')
 

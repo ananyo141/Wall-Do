@@ -7,6 +7,7 @@
 # Wildcard imports are fine as this module deals only with
 # tk widgets; use namespaces in the main script
 import sys, os, logging
+from collections import namedtuple
 from tkinter import *
 from tkinter.ttk import *
 from tkinter import messagebox as msgb, filedialog as fldg
@@ -117,10 +118,10 @@ class GuiInput(Frame):
         dirFrame = Frame(self)
         dirFrame.pack(expand=True, fill=BOTH)
         Label(dirFrame, text=self.fields[0], width=self.maxFieldWidth).pack(side=LEFT, **self.padding)
-        Entry(dirFrame, textvariable=self.dirVar, 
+        Entry(dirFrame, textvariable=self.dirVar,
                 width=self.entryWidgetWidth).pack(side=LEFT, expand=True, fill=X, **self.padding)
 
-        Button(dirFrame, text='Browse', command=chooseDir, 
+        Button(dirFrame, text='Browse', command=chooseDir,
                 width=7).pack(side=RIGHT, **self.padding)
 
     def makeSearchInput(self):
@@ -136,23 +137,67 @@ class GuiInput(Frame):
         searchEnt.pack(side=LEFT, **self.padding)
 
     def makeNumImageInput(self):
+        def numAdd():
+            value = self.numImageVar.get()
+            self.numImageVar.set(value + 5)
+        def numSub():
+            value = self.numImageVar.get() - 5
+            value = 0 if value < 0 else value
+            self.numImageVar.set(value)
         numberFrame = Frame(self)
         numberFrame.pack(expand=True, fill=BOTH)
 
-        Label(numberFrame, text=self.fields[2], 
+        Label(numberFrame, text=self.fields[2],
             width=self.maxFieldWidth).pack(side=LEFT, **self.padding)
-        Entry(numberFrame, textvariable=self.numImageVar, 
+        Entry(numberFrame, textvariable=self.numImageVar,
             width=self.entryWidgetWidth).pack(side=LEFT, **self.padding)
+        Button(numberFrame, text='+', width='1',
+            command=numAdd).pack(side=LEFT, pady=self.padding.get('pady', 0))
+        Button(numberFrame, text='-', width='1',
+            command=numSub).pack(side=LEFT, pady=self.padding.get('pady', 0))
 
     def getValues(self):
+        """
+        Fetch the values from the gui fields and perform validation;
+        Return named tuple of values if everything ok, else show
+        error dialog and return None
+        """
+        def handleError(title, message):
+            msgb.showerror(title=title, message=message)
+            nonlocal invalidField       # change the nesting function's value
+            invalidField = True         # from the nested function
+
+        invalidField = False
+        # validate search key
         searchKey = self.searchVar.get()
         if not searchKey or searchKey == self.searchVarPlaceholder:
-            msgb.showerror(title='Required', message='Please Enter the search key')
+            handleError('Required', 'Please Enter the search key')
+        # validate input directory
+        dirname = self.dirVar.get()
+        if not os.path.exists(dirname):         # if directory is to be created
+            parDir = os.path.dirname(dirname)   # check parent directory is writable
+            checkAccessDir = os.curdir if not parDir else parDir
         else:
-            try:
-                return (self.dirVar.get(), searchKey, self.numImageVar.get())
-            except TclError:
-                msgb.showerror(title='Invalid Input', message='Please enter integer value for number of images')
+            checkAccessDir = dirname
+        if not os.access(checkAccessDir, os.W_OK):
+            handleError('Permission Error',
+                        'Cannot write to given directory')
+        # validate number input
+        try:
+            imageNum = self.numImageVar.get()
+        except TclError:
+            handleError('Invalid Input',
+                        'Please enter integer value for number of images')
+        else:
+            if imageNum < 0:
+                handleError('Negative Error',
+                            'Negative number of images to download is not allowed')
+
+        InputField = namedtuple('InputField', ['searchKey', 'dirname', 'imageNum'])
+        guiLogger.info(f'{invalidField = }')
+        return None if invalidField \
+                    else InputField(searchKey=searchKey,
+                                    dirname=dirname, imageNum=imageNum)
 
 # Downloader Info
 class GuiDetails(Frame):
@@ -229,8 +274,9 @@ class GuiImgViewer(Frame):
             imgRow, imgObjs = imgObjs[:colsize], imgObjs[colsize:]
             for imgTuple in imgRow:
                 thumbPhoto = PhotoImage(imgTuple.obj)
-                handler = lambda path=imgTuple.path: \  # make lambda remember
-                          ImageOpener(self, path).mainloop()   # each path
+                # make lambda remember each path
+                handler = lambda path=imgTuple.path: \
+                          ImageOpener(self, path).mainloop()
                 imgButton = Button(canv, width=imgButtonWidth, image=thumbPhoto,
                             height=imgButtonHeight, command=handler)
                 imgButton.pack()
@@ -265,7 +311,6 @@ class GuiImgViewer(Frame):
         thumbsize is a tuple containing (width, height) of thumbnail
         """
         import mimetypes as mt
-        from collections import namedtuple
         Thumb = namedtuple('Thumb', ['path', 'obj', 'width', 'height'])
 
         cachedir = os.path.join(imgdir, cachedir)
