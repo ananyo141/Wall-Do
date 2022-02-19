@@ -311,7 +311,9 @@ class GuiImgViewer(Frame):
         self.canvas = canv
 
     def makeRightClickMenu(self):
-        pass
+        """
+        Create Right Click menu for Image Viewer
+        """
 
     @staticmethod
     def makeThumbs(thumbsize, imgdir=os.getcwd(), cachedir='.cache', enableCache=True):
@@ -363,18 +365,18 @@ class GuiImgViewer(Frame):
 # Automatic Scrollbar that hides and returns
 # when widget associated is resized
 class AutoScrollbar(Scrollbar):
-    def set(self, low, high):
-        if float(low) <= 0 and float(high) >= 1:
-            self.tk.call("grid", "remove", self)
-        else:
-            self.grid()
-        Scrollbar.set(self, low, high)
-    
-    def pack(self):
-        raise (TclError, "Can't use pack; only grid")
+   def set(self, low, high):
+       if float(low) <= 0 and float(high) >= 1:
+           self.tk.call("grid", "remove", self)
+       else:
+           self.grid()
+       Scrollbar.set(self, low, high)
+   
+   def pack(self):
+       raise (TclError, "Can't use pack; only grid")
 
-    def place(self):
-        raise (TclError, "Can't use place; only grid")
+   def place(self):
+       raise (TclError, "Can't use place; only grid")
 
 # Toplevel Widget to display the image in a new window
 # Resize the image to the screen width
@@ -383,10 +385,12 @@ class ImageOpener(Toplevel):
         Toplevel.__init__(self, parent, **kw)
         self.imgPath = imgPath
         self.showImage()
+        self.focus_set()
+        self.state('zoomed')
 
     def showImage(self):
         " Show the image in fullscreen filling screen "
-        screenWidth, screenHeight = self.winfo_screenwidth(), self.winfo_screenheight()
+        screenWidth, screenHeight = (self.winfo_screenwidth() - 25), (self.winfo_screenheight() - 70)
         guiLogger.info(f'{screenWidth = }, {screenHeight = }')
         image = Image.open(self.imgPath)
         image.resize((screenWidth, screenHeight), Image.ANTIALIAS)
@@ -395,7 +399,10 @@ class ImageOpener(Toplevel):
         yscroll = AutoScrollbar(self)
         xscroll = AutoScrollbar(self, orient='horizontal')
         canv = Canvas(self, yscrollcommand=yscroll.set,
-                            xscrollcommand=xscroll.set)
+                            xscrollcommand=xscroll.set,
+                            scrollregion=(0, 0, screenWidth, screenHeight))
+        yscroll.config(command=canv.yview)
+        xscroll.config(command=canv.xview)
         canv.create_image(0, 0, image=photo, anchor=NW)
 
         canv.grid(row=0, column=0, sticky=NSEW)
@@ -409,12 +416,14 @@ class ImageOpener(Toplevel):
         self.photo = photo  # save from garbage collection
 
 if __name__ == '__main__':
+    import webbrowser
     root = Tk()
     root.title("Tester")
     MakeMenu(root)
     (inp := GuiInput(root)).pack(expand=True, fill=BOTH)
     Button(root, text='Fetch', command=lambda: print(inp.getValues())).pack()
-    Button(root, text='Window', command=lambda: ImageOpener(root,
-                        '/home/ananyobrata/.wallpapers/Iron Man 2 Iron Man Scarlett Johanss_582094.jpg').mainloop()).pack()
+    Button(root, text='Window', command=lambda: ImageOpener(root, fname).mainloop()).pack()
+    Button(root, text='Native', command=lambda: webbrowser.open(fname)).pack()
+    fname = fldg.askopenfilename()
     mainloop()
 
