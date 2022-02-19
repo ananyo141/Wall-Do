@@ -6,7 +6,7 @@
 
 # Wildcard imports are fine as this module deals only with
 # tk widgets; use namespaces in the main script
-import sys, os, logging
+import sys, os, logging, mimetypes as mt
 from collections import namedtuple
 from tkinter import *
 from tkinter.ttk import *
@@ -44,6 +44,7 @@ class MakeMenu:
         self.menubar.add_cascade(label='File', menu=fileMenu, underline=0)
         fileMenu.add_command(label='Import',   command=self.importFile, underline=0)
         fileMenu.add_command(label='Export',   command=self.exportFile, underline=0)
+        fileMenu.add_separator()
         fileMenu.add_command(label='Quit',     command=quitButton,      underline=0)
 
     def makeToolsMenu(self):
@@ -250,6 +251,7 @@ class GuiImgViewer(Frame):
     def __init__(self, parent=None, imgdir=os.curdir, 
                  canvsize=None, thumbsize=None, **kw):
         Frame.__init__(self, parent, **kw)
+        self.idFileDict = dict()   # keep track of canvas ids and filenames
         self.imgdir = imgdir
         self.makeImgViewer(canvsize=canvsize, thumbsize=thumbsize)
         self.makeRightClickMenu()
@@ -290,10 +292,11 @@ class GuiImgViewer(Frame):
                             height=imgButtonHeight, command=handler,
                             cursor='hand2')
                 imgButton.pack()
-                canv.create_window(colPixel, rowPixel, window=imgButton,
+                canv_id = canv.create_window(colPixel, rowPixel, window=imgButton,
                     width=imgButtonWidth, height=imgButtonHeight, anchor=NW)
-                self.thumbsaves.append(thumbPhoto)
+                self.idFileDict[canv_id] = imgTuple.path
 
+                self.thumbsaves.append(thumbPhoto)
                 colPixel += imgButtonWidth
             rowPixel += imgButtonHeight
 
@@ -314,6 +317,42 @@ class GuiImgViewer(Frame):
         """
         Create Right Click menu for Image Viewer
         """
+        def onRightClick(event):
+            self.rightClickEvent = event
+            try:
+                rightClickMenu.tk_popup(event.x_root, event.y_root)
+            finally:
+                rightClickMenu.grab_release()
+
+        rightClickMenu = Menu(self.canv, tearoff=False)
+        rightClickMenu.add_command(label='Open with Default App', 
+                                   command=self.rightDefaultApp)
+        rightClickMenu.add_separator()
+        rightClickMenu.add_command(label='Delete', 
+                                   command=self.rightDelete)
+        rightClickMenu.add_command(label='Delete All', 
+                                   command=self.rightDeleteAll)
+
+        self.canv.bind('<Button-3>', onRightClick)
+
+    def rightDefaultApp(self):
+        " Open the image in native system app "
+        import webbrowser
+        canv_id = self.canv.find_closest(self.event.x, self.event.y)
+        webbrowser.open(self.idFileDict[canv_id])
+
+    def rightDelete(self):
+        " Delete the selected image "
+        canv_id = self.canv.find_closest(self.event.x, self.event.y)
+        # may use send2trash to delete to recycle bin
+        os.unlink(self.idFileDict[canv_id])
+
+    def rightDeleteAll(self):
+        " Delete the all images "
+        for filename in os.listdir(self.imgdir):
+            ftype, enc = mt.guess_type(filename)
+            if ftype and ftype.split('/')[0] == 'image':
+                os.unlink(os.path.join(self.imgdir, filename))
 
     @staticmethod
     def makeThumbs(thumbsize, imgdir=os.getcwd(), cachedir='.cache', enableCache=True):
@@ -322,7 +361,6 @@ class GuiImgViewer(Frame):
         a named tuple of (imgpath, imgobj) resized to given size;
         thumbsize is a tuple containing (width, height) of thumbnail
         """
-        import mimetypes as mt
         Thumb = namedtuple('Thumb', ['path', 'obj', 'width', 'height'])
 
         cachedir = os.path.join(imgdir, cachedir)
@@ -386,14 +424,17 @@ class ImageOpener(Toplevel):
         self.imgPath = imgPath
         self.showImage()
         self.focus_set()
-        self.state('zoomed')
+        try:
+            self.state('zoomed')    # for windows
+        except TclError:
+            self.state('iconic')    # for unix
 
     def showImage(self):
         " Show the image in fullscreen filling screen "
         screenWidth, screenHeight = (self.winfo_screenwidth() - 25), (self.winfo_screenheight() - 70)
         guiLogger.info(f'{screenWidth = }, {screenHeight = }')
         image = Image.open(self.imgPath)
-        image.resize((screenWidth, screenHeight), Image.ANTIALIAS)
+        image = image.resize((screenWidth, screenHeight), Image.ANTIALIAS)
         photo = PhotoImage(image)
 
         yscroll = AutoScrollbar(self)
@@ -404,6 +445,8 @@ class ImageOpener(Toplevel):
         yscroll.config(command=canv.yview)
         xscroll.config(command=canv.xview)
         canv.create_image(0, 0, image=photo, anchor=NW)
+        guiLogger.info(f'{photo.width() = }')
+        guiLogger.info(f'{image.width = }')
 
         canv.grid(row=0, column=0, sticky=NSEW)
         yscroll.grid(row=0, column=1, sticky=NS)
@@ -424,6 +467,6 @@ if __name__ == '__main__':
     Button(root, text='Fetch', command=lambda: print(inp.getValues())).pack()
     Button(root, text='Window', command=lambda: ImageOpener(root, fname).mainloop()).pack()
     Button(root, text='Native', command=lambda: webbrowser.open(fname)).pack()
-    fname = fldg.askopenfilename()
+    fname = fldg.askopenfilename() or sys.exit("No image chosen")
     mainloop()
 
