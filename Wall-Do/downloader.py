@@ -30,7 +30,7 @@ class AlphaDownloader:
                       'AppleWebKit/537.36 (KHTML, like Gecko) '
                       'Chrome/72.0.3626.28 Safari/537.36'
     }
-    prefixes = ('Movie ', 'Video ', 'Comics ')
+    prefixes = ('Movie ', 'Video ', 'Comics ', 'TV Show ')
     chunksize = 10000000
     # For current session (total)
     totalSize = 0

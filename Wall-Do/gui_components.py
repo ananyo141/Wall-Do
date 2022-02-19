@@ -61,20 +61,28 @@ class MakeMenu:
                                              'Licensed Under: MIT License\n'
                                              '(c) Copyright: 2022-present')
 
+    def __notImplemented(self):
+        """
+        private function to act as a placeholder to a non-redefined
+        method
+        """
+        msgb.showerror(title='Not Implemented',
+                       message='This feature is not yet implemented')
+    # Subclass Methods
     def importFile(self):
-        raise NotImplementedError
+        self.__notImplemented()
 
     def exportFile(self):
-        raise NotImplementedError
+        self.__notImplemented()
     
     def pingEdit(self):
-        raise NotImplementedError
+        self.__notImplemented()
 
     def stopEdit(self):
-        raise NotImplementedError
+        self.__notImplemented()
 
     def resumeEdit(self):
-        raise NotImplementedError
+        self.__notImplemented()
 
 # Reusable Frame components
 # Make up the gui input body
@@ -251,7 +259,8 @@ class GuiImgViewer(Frame):
         if canvsize is None: canvsize = (300,300)           # default canvas size
         if thumbsize is None: thumbsize = (90,60)           # default thumbsize
         canvWidth, canvHeight = canvsize
-        canv = Canvas(self, width=canvWidth, height=canvHeight)
+        canv = Canvas(self, width=canvWidth, height=canvHeight,
+                      bd=2, relief=GROOVE)
 
         # Use thumb caching, display in viewer
         imgObjs = self.makeThumbs(thumbsize, self.imgdir)
@@ -278,7 +287,8 @@ class GuiImgViewer(Frame):
                 handler = lambda path=imgTuple.path: \
                           ImageOpener(self, path).mainloop()
                 imgButton = Button(canv, width=imgButtonWidth, image=thumbPhoto,
-                            height=imgButtonHeight, command=handler)
+                            height=imgButtonHeight, command=handler,
+                            cursor='hand2')
                 imgButton.pack()
                 canv.create_window(colPixel, rowPixel, window=imgButton,
                     width=imgButtonWidth, height=imgButtonHeight, anchor=NW)
@@ -295,8 +305,8 @@ class GuiImgViewer(Frame):
             xscroll = Scrollbar(self, command=canv.xview, orient='horizontal')
             xscroll.pack(side=BOTTOM, fill=X)
             canv.config(xscrollcommand=xscroll.set)
-        canv.pack(expand=True, fill=BOTH)
 
+        canv.pack(expand=True, fill=BOTH)
         # save canvas obj for further config by user
         self.canvas = canv
 
@@ -327,7 +337,7 @@ class GuiImgViewer(Frame):
                 ftype.split('/')[0] == 'image' and enc is None:
                 head, ext = os.path.splitext(filepath)
                 thumbname = thumbNameSpec % dict(
-                    fname=head, width=size[0], height=size[1], ext=ext)
+                    fname=head, width=thumbsize[0], height=thumbsize[1], ext=ext)
                 thumbpath = os.path.join(cachedir, thumbname)
 
                 # if cache exists
@@ -337,12 +347,12 @@ class GuiImgViewer(Frame):
                 else:
                     try:
                         thumbObj = Image.open(filepath)
-                        thumbObj.thumb(size, Image.ANTIALIAS)
+                        thumbObj.thumbnail(size, Image.ANTIALIAS)
                         if enableCache:
                             thumbObj.save(thumbpath)
                     except Exception as exc:
                         guiLogger.error(f'Error creating thumbnail: {filepath}'
-                                f'\nTraceback Details: {str(exc)}')
+                                        f'\nTraceback Details: {str(exc)}')
                         continue
                 # Path to original file and resized thumbnail image object
                 thumblist.append(Thumb(path=filepath, obj=thumbObj,
@@ -350,10 +360,53 @@ class GuiImgViewer(Frame):
                                        height=thumbObj.height))
         return thumblist
 
+# Automatic Scrollbar that hides and returns
+# when widget associated is resized
+class AutoScrollbar(Scrollbar):
+    def set(self, low, high):
+        if float(low) <= 0 and float(high) >= 1:
+            self.tk.call("grid", "remove", self)
+        else:
+            self.grid()
+        Scrollbar.set(self, low, high)
+    
+    def pack(self):
+        raise (TclError, "Can't use pack; only grid")
+
+    def place(self):
+        raise (TclError, "Can't use place; only grid")
+
 # Toplevel Widget to display the image in a new window
+# Resize the image to the screen width
 class ImageOpener(Toplevel):
-    def __init__(self, parent=None, **kw):
-        Toplevel.__init__(parent, **kw)
+    def __init__(self, parent, imgPath, **kw):
+        Toplevel.__init__(self, parent, **kw)
+        self.imgPath = imgPath
+        self.showImage()
+
+    def showImage(self):
+        " Show the image in fullscreen filling screen "
+        screenWidth, screenHeight = self.winfo_screenwidth(), self.winfo_screenheight()
+        guiLogger.info(f'{screenWidth = }, {screenHeight = }')
+        image = Image.open(self.imgPath)
+        image.resize((screenWidth, screenHeight), Image.ANTIALIAS)
+        photo = PhotoImage(image)
+
+        yscroll = AutoScrollbar(self)
+        xscroll = AutoScrollbar(self, orient='horizontal')
+        canv = Canvas(self, yscrollcommand=yscroll.set,
+                            xscrollcommand=xscroll.set)
+        canv.create_image(0, 0, image=photo, anchor=NW)
+
+        canv.grid(row=0, column=0, sticky=NSEW)
+        yscroll.grid(row=0, column=1, sticky=NS)
+        xscroll.grid(row=1, column=0, sticky=EW)
+
+        # Expand canvas
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
+        self.photo = photo  # save from garbage collection
 
 if __name__ == '__main__':
     root = Tk()
@@ -361,5 +414,7 @@ if __name__ == '__main__':
     MakeMenu(root)
     (inp := GuiInput(root)).pack(expand=True, fill=BOTH)
     Button(root, text='Fetch', command=lambda: print(inp.getValues())).pack()
+    Button(root, text='Window', command=lambda: ImageOpener(root,
+                        '/home/ananyobrata/.wallpapers/Iron Man 2 Iron Man Scarlett Johanss_582094.jpg').mainloop()).pack()
     mainloop()
 
