@@ -136,13 +136,18 @@ class GuiInput(Frame):
     def makeSearchInput(self):
         def clearPlaceholder(event):
             if self.searchVar.get() == self.searchVarPlaceholder:
-                searchEnt.delete('0', 'end')
+                searchEnt.delete('0', END)
+        def enterPlaceholder(event):
+            if self.searchVar.get() == '':
+                searchEnt.insert(END, self.searchVarPlaceholder)
 
-        (searchFrame := Frame(self)).pack(expand=True, fill=BOTH)
+        searchFrame = Frame(self)
+        searchFrame.pack(expand=True, fill=BOTH)
         Label(searchFrame, text=self.fields[1], width=self.maxFieldWidth).pack(side=LEFT, **self.padding)
         searchEnt = Entry(searchFrame, textvariable=self.searchVar,
             width=self.entryWidgetWidth)
-        searchEnt.bind('<FocusIn>', clearPlaceholder)
+        searchEnt.bind('<FocusIn>',  clearPlaceholder)
+        searchEnt.bind('<FocusOut>', enterPlaceholder)
         searchEnt.pack(side=LEFT, **self.padding)
 
     def makeNumImageInput(self):
@@ -463,7 +468,8 @@ if __name__ == '__main__':
     root = Tk()
     root.title("Tester")
     MakeMenu(root)
-    (inp := GuiInput(root)).pack(expand=True, fill=BOTH)
+    inp = GuiInput(root)
+    inp.pack(expand=True, fill=BOTH)
     Button(root, text='Fetch', command=lambda: print(inp.getValues())).pack()
     Button(root, text='Window', command=lambda: ImageOpener(root, fname).mainloop()).pack()
     Button(root, text='Native', command=lambda: webbrowser.open(fname)).pack()

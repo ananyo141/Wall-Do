@@ -43,6 +43,8 @@ class AlphaDownloader:
 
     def __init__(self, searchKey, numImages, downloadDir=os.curdir, trace=False):
         " initialize attributes for object "
+        self.imageMetaDict = dict()
+        self.mutex = threading.Lock()
         self.downloadSession = requests.Session()
         self.downloadSession.headers.update(self.headers)
         self.reset(searchKey, numImages, downloadDir, trace)
@@ -73,9 +75,9 @@ class AlphaDownloader:
 
         """
         MaxRetries = maxretries
+        self.imageMetaDict = {}             # clear download links
         start = time.time()
-        self.mutex = threading.Lock()
-        self._queryStrServed = None     # query string returned by website (may be collection id)
+        self._queryStrServed = None         # query string returned by website (may be collection id)
 
         self.numPages = retries = 0
         while self.numDownloaded < self.numImages and retries < MaxRetries:
@@ -100,6 +102,11 @@ class AlphaDownloader:
         if retries >= MaxRetries and self.numDownloaded < self.numImages:
             raise MaxRetriesCrossed("Max Retries; check log for error details")
 
+    def _downloadSq(self, imgList):
+        " Target Function for threading "
+        for imgname, imglink in imgList:
+            self.downloadImage(imglink, imgname)
+
     def _runDownload(self, ImgPerThread):
         """
         Download Logic;
@@ -108,11 +115,6 @@ class AlphaDownloader:
         Not to be invoked directly, use wrapper method startDownload()
 
         """
-        def downloadSq(imgList):
-            " Target Function for threading "
-            for imgname, imglink in imgList:
-                self.downloadImage(imglink, imgname)
-
         threads  = []
         imgArg   = []
         finished = False
@@ -123,15 +125,18 @@ class AlphaDownloader:
             for imgTuple in self.fetchLinks(self.numPages):
                 if imgLinksFetched >= self.numImages:
                     finished = True
-                    break
-                imgArg.append(imgTuple)
-                currentImagesFetched = len(imgArg)
-                if currentImagesFetched == ImgPerThread:
-                    thread = threading.Thread(target=downloadSq, args=(imgArg,))
+                else:
+                    imgArg.append(imgTuple)
+                # if length becomes equal to image per thread
+                # or image links are fetched but not processed
+                # (not a multiple of imgPerThread)
+                if len(imgArg) == ImgPerThread \
+                        or (finished and imgArg):
+                    thread = threading.Thread(target=self._downloadSq, args=(imgArg,))
                     threads.append(thread);                                 downloadLogger.info(f'{len(imgArg) = }')
                     thread.start();                                         downloadLogger.debug(f'{imgLinksFetched = }')
                     imgArg = [];                                            downloadLogger.debug(f'{self.numPages = }')
-                    imgLinksFetched += currentImagesFetched
+                imgLinksFetched += 1
 
         for thread in threads: thread.join()
 
@@ -166,9 +171,23 @@ class AlphaDownloader:
             self.downloadSize  += imgSize
             self.totalSize     += imgSize
             self.numDownloaded += 1
+            self.imageMetaDict[name] = link
 
         if self.trace:
             print(f'Downloaded: {name}...')
+
+    def restoreMetadata(self, imageMetaDict, imgPerThread=5):
+        " Download images from a previously saved name-image dict "
+        imgList = [(name, link) for name, link in imageMetaDict.items()]
+        threads = []
+        while imgList:
+            imgArg, imgList = imgList[:imgPerThread], imgList[imgPerThread:]
+            thread = threading.Thread(target=self._downloadSq, args=(imgArg,))
+            thread.start()
+            threads.append(thread)
+        for thread in threads: thread.join()
+        msgb.showinfo(title='Imported', 
+                      message='Previous session was successfully restored')
 
     def fetchLinks(self, start, stop=None, step=1):
         """
@@ -228,7 +247,7 @@ class AlphaDownloader:
 """
 GUI oriented Downloader that updates status with tk variables
 """
-class DownloaderWithVar(AlphaDownloader):
+class GuiDownloader(AlphaDownloader):
     def __init__(self, *args, sessionVar=None, progressVar=None, currentVar=None, **kw):
         AlphaDownloader.__init__(self, *args, **kw)
         self.reset(*args, sessionVar=sessionVar, progressVar=progressVar, currentVar=currentVar, **kw)

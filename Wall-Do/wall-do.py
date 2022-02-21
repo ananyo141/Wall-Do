@@ -2,18 +2,65 @@
 
 # Entry Point For the Wall-Do
 
-import os, sys, logging
-from downloader import AlphaDownloader
+import os, sys, logging, json
+import tkinter as tk
+from tkinter import ttk
+from tkinter import messagebox as msgb, filedialog as fldg
+import gui_components as guiC
+from downloader import AlphaDownloader, GuiDownloader
+from exceptions import SearchReturnedNone
 
 from logger import mainlogger
 walldologger = logging.getLogger('main.walldo')
 walldologger.info('Entry Point: Wall-Do')
-import exceptions as exp
+
+class MakeMenuHandlers(guiC.MakeMenu):
+    def __init__(self, *args, downloaderObj, **kw):
+        guiC.MakeMenu.__init__(*args, **kw)
+        self.downloaderObj = downloaderObj
+
+    def importFile(self):
+        """
+        Get a json filename from the user and save a dict of image names
+        and links to self dict reference if entered
+        """
+        imgMetaFile = fldg.askopenfile(title='Enter Import Data',
+                                       filetypes=(('JSON Metadata', '*.json'),
+                                                  ('All', '*')))
+        if not imgMetaFile:
+            msgb.showerror(title='No Files Imported', 
+                           message='Please enter metadata from a previous run')
+        else:
+            try:
+                imageMetaDict = json.load(imgMetaFile)
+            except json.decoder.JSONDecodeError:
+                msgb.showerror(title='Invalid File', 
+                               message='Parse Error, is it a valid json file?')
+            else:
+                self.downloaderObj.restoreMetadata(imageMetaDict)
+
+
+    def exportFile(self):
+        " Save the download metadata dictionary to a given file "
+        from datetime import datetime as dt
+        imgMetaFile = fldg.asksaveasfile(defaultextension='.json',
+                initialfile=f'WallDoData_({dt.now().strftime("%d/%m/%Y-%H:%M:%S")})',
+                filetypes=(('JSON Metadata', '*.json'), ('All', '*')))
+        if imgMetaFile:
+            json.dump(self.downloaderObj.imageMetaDict, imgMetaFile, indent=4)
+            msgb.showinfo(title='Success', message='Saved session metadata as '
+                          f"'{imgMetaFile.name}'")
+
+    def pingEdit(self):
+        " Ping the site for links for a single page and return status "
+        startTime = time.perf_counter_ns()
+        self.downloadObj.fetchLinks(1)
+        msgb.showinfo(title='Ping', message='Website pinged in '
+                      f'{time.perf_counter_ns() - startTime} ns')
 
 def interactive():
     """
     Handle commandline arguments if invoked as commandline tool
-
     """
     import argparse
     parser = argparse.ArgumentParser()
@@ -26,21 +73,18 @@ def interactive():
     downloadDir = args.search if args.downloadDir is None else args.downloadDir
     try:
         AlphaDownloader(args.searchKey, args.number, downloadDir, trace=True).startDownload(args.threads)
-    except exp.SearchReturnedNone:
+    except SearchReturnedNone:
         sys.exit(f"No Images found for {args.search}")
 
 def makeGUI():
-    raise NotImplementedError
-
-def main():
     """
-    Driver Function
+    Handle the gui if invoked without any arguments
     """
-    if len(sys.argv) > 1:
-        interactive()
-    else:
-        makeGUI()
+    root = tk.Tk()
+    root.title('Wall-Do! - A Wallpaper Downloader')
+    root.geometry('400x350')
 
 if __name__ == '__main__':
-    main()
+    if len(sys.argv) > 1: interactive()
+    else: makeGUI()
 
