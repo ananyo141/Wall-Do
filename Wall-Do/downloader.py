@@ -41,7 +41,7 @@ class AlphaDownloader:
                   "Session Details:\n"
                   "Total Images: %(totalDownloads)d, Total Size: %(totalSize).3f MB\n")
 
-    def __init__(self, searchKey, numImages, downloadDir=os.curdir, trace=False):
+    def __init__(self, searchKey=None, numImages=1, downloadDir=os.curdir, trace=False):
         " initialize attributes for object "
         self.imageMetaDict = dict()
         self.mutex = threading.Lock()
@@ -49,7 +49,7 @@ class AlphaDownloader:
         self.downloadSession.headers.update(self.headers)
         self.reset(searchKey, numImages, downloadDir, trace)
 
-    def reset(self, searchKey, numImages, downloadDir=os.curdir, trace=False):
+    def reset(self, searchKey=None, numImages=1, downloadDir=os.curdir, trace=False):
         " reset settings for different download config "
         if numImages <= 0:
             raise InvalidDownloadNum
@@ -118,12 +118,14 @@ class AlphaDownloader:
         threads  = []
         imgArg   = []
         finished = False
-        imgLinksFetched = 0 
+        self.imgLinksFetched = 0 
 
         while not finished:
             self.numPages += 1
             for imgTuple in self.fetchLinks(self.numPages):
-                if imgLinksFetched >= self.numImages:
+                # FIXME: Loss of cycles even after download finished
+                # keeps iterating the for loop even if imgLinks are >= numImages
+                if self.imgLinksFetched >= self.numImages:
                     finished = True
                 else:
                     imgArg.append(imgTuple)
@@ -134,11 +136,15 @@ class AlphaDownloader:
                         or (finished and imgArg):
                     thread = threading.Thread(target=self._downloadSq, args=(imgArg,))
                     threads.append(thread);                                 downloadLogger.info(f'{len(imgArg) = }')
-                    thread.start();                                         downloadLogger.debug(f'{imgLinksFetched = }')
+                    thread.start();                                         downloadLogger.debug(f'{self.imgLinksFetched = }')
                     imgArg = [];                                            downloadLogger.debug(f'{self.numPages = }')
-                imgLinksFetched += 1
+                self.imgLinksFetched += 1
+                self.updateProgress()
 
         for thread in threads: thread.join()
+
+    def updateProgress(self):
+        pass
 
     def downloadImage(self, link, name=''):
         " download given image link "
@@ -250,20 +256,14 @@ GUI oriented Downloader that updates status with tk variables
 class GuiDownloader(AlphaDownloader):
     def __init__(self, *args, sessionVar=None, progressVar=None, currentVar=None, **kw):
         AlphaDownloader.__init__(self, *args, **kw)
-        self.reset(*args, sessionVar=sessionVar, progressVar=progressVar, currentVar=currentVar, **kw)
-
-    def reset(self, *args, sessionVar=None, progressVar=None, currentVar=None, **kw):
-        AlphaDownloader.reset(self, *args, **kw)
-        self.trace = False             # mandatorily disable console logging
         self.sessionVar  = sessionVar
         self.progressVar = progressVar
         self.currentVar  = currentVar
+        downloadLogger.debug(f'{self.sessionVar = }, {self.progressVar = }, {self.currentVar = }')
 
-    def downloadImage(self, *args, **kw):
-        AlphaDownloader.downloadImage(self, *args, **kw)
+    def downloadImage(self, link, name=''):
+        AlphaDownloader.downloadImage(self, link, name)
         with self.mutex:
-            if self.progressVar:
-                self.progressVar.set((self.numDownloaded // self.numImages) * 100)
             if self.currentVar:
                 self.currentVar.set(f'Downloaded {link}...')
 
@@ -273,4 +273,14 @@ class GuiDownloader(AlphaDownloader):
             self.sessionVar.set(self.printFormat % self.sessionDict)
         if self.currentVar:
             self.currentVar.set('Finished')
+        downloadLogger.debug(f'{self.sessionVar = }, {self.currentVar = }')
+
+    def updateProgress(self):
+        with self.mutex:
+            if self.progressVar:
+                #self.progressVar.set((self.numDownloaded // self.numImages) * 100)
+                self.progressVar.set((self.imgLinksFetched / self.numImages) * 100)
+                downloadLogger.debug(f'{self.imgLinksFetched = }')
+                downloadLogger.debug(f'{self.numImages = }')
+                downloadLogger.debug(f'{(self.imgLinksFetched / self.numImages) * 100 = }')
 

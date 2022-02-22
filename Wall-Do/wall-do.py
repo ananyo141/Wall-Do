@@ -2,7 +2,7 @@
 
 # Entry Point For the Wall-Do
 
-import os, sys, logging, json
+import os, sys, logging, json, threading
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox as msgb, filedialog as fldg
@@ -15,9 +15,12 @@ walldologger = logging.getLogger('main.walldo')
 walldologger.info('Entry Point: Wall-Do')
 
 class MakeMenuHandlers(guiC.MakeMenu):
-    def __init__(self, *args, downloaderObj, **kw):
-        guiC.MakeMenu.__init__(*args, **kw)
+    def __init__(self, *args, downloaderObj=None, **kw):
+        guiC.MakeMenu.__init__(self, *args, **kw)
         self.downloaderObj = downloaderObj
+    
+    def config(downloader):
+        self.downloaderObj = downloader
 
     def importFile(self):
         """
@@ -44,7 +47,7 @@ class MakeMenuHandlers(guiC.MakeMenu):
         " Save the download metadata dictionary to a given file "
         from datetime import datetime as dt
         imgMetaFile = fldg.asksaveasfile(defaultextension='.json',
-                initialfile=f'WallDoData_({dt.now().strftime("%d/%m/%Y-%H:%M:%S")})',
+                initialfile=f'WallDoData_({dt.now().strftime("%d-%m-%Y_%H:%M:%S")})',
                 filetypes=(('JSON Metadata', '*.json'), ('All', '*')))
         if imgMetaFile:
             json.dump(self.downloaderObj.imageMetaDict, imgMetaFile, indent=4)
@@ -53,8 +56,9 @@ class MakeMenuHandlers(guiC.MakeMenu):
 
     def pingEdit(self):
         " Ping the site for links for a single page and return status "
+        import time
         startTime = time.perf_counter_ns()
-        self.downloadObj.fetchLinks(1)
+        self.downloaderObj.fetchLinks(1)
         msgb.showinfo(title='Ping', message='Website pinged in '
                       f'{time.perf_counter_ns() - startTime} ns')
 
@@ -80,9 +84,32 @@ def makeGUI():
     """
     Handle the gui if invoked without any arguments
     """
+    def startDownloadHandler():
+        inputs = guiInpFrame.getValues()
+        walldologger.debug(f'{inputs = }')
+        if inputs:
+            downloaderObj.reset(searchKey=inputs.searchKey, numImages=inputs.imageNum,
+                downloadDir=inputs.dirname)
+            threading.Thread(target=downloaderObj.startDownload, args=()).start()
+
     root = tk.Tk()
     root.title('Wall-Do! - A Wallpaper Downloader')
-    root.geometry('400x350')
+    root.geometry('400x600')
+
+    # Place Menu
+    # Place Input Fields
+    guiInpFrame = guiC.GuiInput(root)
+    guiInpFrame.pack()
+    # Place Detail Fields
+    detailsFrame = guiC.GuiDetails(root)
+    downloaderObj = GuiDownloader(sessionVar=detailsFrame.sessionVar, 
+        progressVar=detailsFrame.progressVar, currentVar=detailsFrame.currentVar)
+    menu = MakeMenuHandlers(root, downloaderObj=downloaderObj)
+    detailsFrame.pack()
+    # Place Viewer
+    guiC.GuiImgViewer(root).pack()
+    ttk.Button(root, text='Start Download', command=startDownloadHandler).pack(pady=8)
+    tk.mainloop()
 
 if __name__ == '__main__':
     if len(sys.argv) > 1: interactive()

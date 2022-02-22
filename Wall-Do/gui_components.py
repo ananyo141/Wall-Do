@@ -120,7 +120,7 @@ class GuiInput(Frame):
     
     def makeDirInput(self):
         def chooseDir():
-            inpDir = fldg.askdirectory(title='Enter directory')
+            inpDir = fldg.askdirectory(title='Enter directory', mustexist=False)
             if inpDir:
                 self.dirVar.set(os.path.normpath(inpDir))
 
@@ -152,12 +152,18 @@ class GuiInput(Frame):
 
     def makeNumImageInput(self):
         def numAdd():
-            value = self.numImageVar.get()
-            self.numImageVar.set(value + 5)
+            try:
+                value = self.numImageVar.get()
+                self.numImageVar.set(value + 5)
+            except:
+                msgb.showerror(title='Check Value', message='Invalid Field')
         def numSub():
-            value = self.numImageVar.get() - 5
-            value = 0 if value < 0 else value
-            self.numImageVar.set(value)
+            try:
+                value = self.numImageVar.get() - 5
+                value = 0 if value < 0 else value
+                self.numImageVar.set(value)
+            except:
+                msgb.showerror(title='Check Value', message='Invalid Field')
         numberFrame = Frame(self)
         numberFrame.pack(expand=True, fill=BOTH)
 
@@ -165,10 +171,10 @@ class GuiInput(Frame):
             width=self.maxFieldWidth).pack(side=LEFT, **self.padding)
         Entry(numberFrame, textvariable=self.numImageVar,
             width=self.entryWidgetWidth).pack(side=LEFT, **self.padding)
-        Button(numberFrame, text='+', width='1',
-            command=numAdd).pack(side=LEFT, pady=self.padding.get('pady', 0))
-        Button(numberFrame, text='-', width='1',
-            command=numSub).pack(side=LEFT, pady=self.padding.get('pady', 0))
+        Button(numberFrame, text='+', width='2',
+            command=numAdd).pack(side=LEFT, **self.padding)
+        Button(numberFrame, text='-', width='2',
+            command=numSub).pack(side=LEFT, **self.padding)
 
     def getValues(self):
         """
@@ -223,7 +229,7 @@ class GuiDetails(Frame):
     def __init__(self, parent=None, **kw):
         Frame.__init__(self, parent, **kw)
         self.sessionVar  = StringVar()
-        self.progressVar = IntVar()
+        self.progressVar = DoubleVar()
         self.currentVar  = StringVar()
 
         self.displaySessionDetails()
@@ -236,13 +242,14 @@ class GuiDetails(Frame):
         ).pack(expand=True,fill=BOTH)
 
     def displayProgressbar(self):
-        Progressbar(self, var=self.progressVar, length=100, 
+        self.progressbar = Progressbar(self, var=self.progressVar, length=100, 
                     mode='determinate', orient='horizontal',
-        ).pack(fill=X)
+        )
+        self.progressbar.pack(fill=X)
 
     def displayStatus(self):
         Message(self, textvariable=self.currentVar,
-                width=300, font=('inconsolata', 20, 'bold'),
+                width=300, font=('inconsolata', 15, 'bold'),
         ).pack(expand=True, fill=X)
 
 # Image Viewer
@@ -275,7 +282,7 @@ class GuiImgViewer(Frame):
         # Calculate canvas scrollregion
         imgButtonWidth, imgButtonHeight = thumbsize
         requiredCanvWidth = imgButtonWidth * colsize
-        requiredCanvHeight = imgButtonHeight * (len(imgObjs) // cosize)
+        requiredCanvHeight = imgButtonHeight * (len(imgObjs) // colsize)
         canv.config(scrollregion=(0, 0, requiredCanvWidth, requiredCanvHeight))
 
         # check if scrolls are needed
@@ -316,7 +323,7 @@ class GuiImgViewer(Frame):
 
         canv.pack(expand=True, fill=BOTH)
         # save canvas obj for further config by user
-        self.canvas = canv
+        self.canv = canv
 
     def makeRightClickMenu(self):
         """
@@ -392,7 +399,7 @@ class GuiImgViewer(Frame):
                 else:
                     try:
                         thumbObj = Image.open(filepath)
-                        thumbObj.thumbnail(size, Image.ANTIALIAS)
+                        thumbObj.thumbnail(thumbsize, Image.ANTIALIAS)
                         if enableCache:
                             thumbObj.save(thumbpath)
                     except Exception as exc:
