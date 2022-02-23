@@ -2,7 +2,7 @@
 
 # Entry Point For the Wall-Do
 
-import os, sys, logging, json, threading
+import os, sys, logging, json, threading, time
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox as msgb, filedialog as fldg
@@ -56,7 +56,6 @@ class MakeMenuHandlers(guiC.MakeMenu):
 
     def pingEdit(self):
         " Ping the site for links for a single page and return status "
-        import time
         startTime = time.perf_counter_ns()
         self.downloaderObj.fetchLinks(1)
         msgb.showinfo(title='Ping', message='Website pinged in '
@@ -85,16 +84,22 @@ def makeGUI():
     Handle the gui if invoked without any arguments
     """
     def startDownloadHandler():
+        def updateCanv():
+            while True:
+                guiC.GuiImgViewer(root, inputs.dirname).pack()
+                time.sleep(0.5)
         inputs = guiInpFrame.getValues()
         walldologger.debug(f'{inputs = }')
         if inputs:
             downloaderObj.reset(searchKey=inputs.searchKey, numImages=inputs.imageNum,
                 downloadDir=inputs.dirname)
             threading.Thread(target=downloaderObj.startDownload, args=()).start()
+            threading.Thread(target=updateCanv, args=()).start()
 
     root = tk.Tk()
     root.title('Wall-Do! - A Wallpaper Downloader')
-    root.geometry('400x600')
+    root.geometry('400x650')
+    root.protocol('WM_DELETE_WINDOW', lambda: sys.exit(0))
 
     # Place Menu
     # Place Input Fields
@@ -105,9 +110,8 @@ def makeGUI():
     downloaderObj = GuiDownloader(sessionVar=detailsFrame.sessionVar, 
         progressVar=detailsFrame.progressVar, currentVar=detailsFrame.currentVar)
     menu = MakeMenuHandlers(root, downloaderObj=downloaderObj)
-    detailsFrame.pack()
+    detailsFrame.pack(expand=True) #, fill='both')
     # Place Viewer
-    guiC.GuiImgViewer(root).pack()
     ttk.Button(root, text='Start Download', command=startDownloadHandler).pack(pady=8)
     tk.mainloop()
 

@@ -139,12 +139,8 @@ class AlphaDownloader:
                     thread.start();                                         downloadLogger.debug(f'{self.imgLinksFetched = }')
                     imgArg = [];                                            downloadLogger.debug(f'{self.numPages = }')
                 self.imgLinksFetched += 1
-                self.updateProgress()
 
         for thread in threads: thread.join()
-
-    def updateProgress(self):
-        pass
 
     def downloadImage(self, link, name=''):
         " download given image link "
@@ -265,7 +261,10 @@ class GuiDownloader(AlphaDownloader):
         AlphaDownloader.downloadImage(self, link, name)
         with self.mutex:
             if self.currentVar:
-                self.currentVar.set(f'Downloaded {link}...')
+                self.currentVar.set(f'Downloaded\n{link}...')
+            if self.progressVar:
+                self.progressVar.set((self.numDownloaded / self.numImages) * 100)
+            downloadLogger.debug(f'{self.numDownloaded = }')
 
     def startDownload(self, **kw):
         AlphaDownloader.startDownload(self, **kw)
@@ -273,14 +272,3 @@ class GuiDownloader(AlphaDownloader):
             self.sessionVar.set(self.printFormat % self.sessionDict)
         if self.currentVar:
             self.currentVar.set('Finished')
-        downloadLogger.debug(f'{self.sessionVar = }, {self.currentVar = }')
-
-    def updateProgress(self):
-        with self.mutex:
-            if self.progressVar:
-                #self.progressVar.set((self.numDownloaded // self.numImages) * 100)
-                self.progressVar.set((self.imgLinksFetched / self.numImages) * 100)
-                downloadLogger.debug(f'{self.imgLinksFetched = }')
-                downloadLogger.debug(f'{self.numImages = }')
-                downloadLogger.debug(f'{(self.imgLinksFetched / self.numImages) * 100 = }')
-

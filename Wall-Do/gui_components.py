@@ -228,7 +228,7 @@ class GuiDetails(Frame):
     """
     def __init__(self, parent=None, **kw):
         Frame.__init__(self, parent, **kw)
-        self.sessionVar  = StringVar()
+        self.sessionVar  = StringVar(value='Enter a search keyword to start downloading!')
         self.progressVar = DoubleVar()
         self.currentVar  = StringVar()
 
@@ -238,19 +238,18 @@ class GuiDetails(Frame):
 
     def displaySessionDetails(self):
         Message(self, textvariable=self.sessionVar, 
-                width=300, font=('consolas', 14, 'normal'),
+                width=300, font=('consolas', 12, 'bold italic'),
         ).pack(expand=True,fill=BOTH)
 
     def displayProgressbar(self):
-        self.progressbar = Progressbar(self, var=self.progressVar, length=100, 
+        Progressbar(self, var=self.progressVar, length=100, 
                     mode='determinate', orient='horizontal',
-        )
-        self.progressbar.pack(fill=X)
+        ).pack(fill=BOTH)
 
     def displayStatus(self):
         Message(self, textvariable=self.currentVar,
-                width=300, font=('inconsolata', 15, 'bold'),
-        ).pack(expand=True, fill=X)
+                width=350, font=('inconsolata', 15, 'italic'),
+        ).pack(expand=True, fill=BOTH)
 
 # Image Viewer
 class GuiImgViewer(Frame):
@@ -268,7 +267,10 @@ class GuiImgViewer(Frame):
         self.makeImgViewer(canvsize=canvsize, thumbsize=thumbsize)
         self.makeRightClickMenu()
 
-    def makeImgViewer(self, canvsize=None, thumbsize=None, colsize=6):
+    def config(imgdir):
+        self.imgdir = imgdir
+
+    def makeImgViewer(self, canvsize=None, thumbsize=None, colsize=4):
         " Create the scrolled canvas with image thumbs "
         if canvsize is None: canvsize = (300,300)           # default canvas size
         if thumbsize is None: thumbsize = (90,60)           # default thumbsize
@@ -285,9 +287,12 @@ class GuiImgViewer(Frame):
         requiredCanvHeight = imgButtonHeight * (len(imgObjs) // colsize)
         canv.config(scrollregion=(0, 0, requiredCanvWidth, requiredCanvHeight))
 
+        guiLogger.debug(f'{imgButtonWidth = }, {imgButtonHeight = }')
+        guiLogger.debug(f'{requiredCanvWidth = }, {requiredCanvHeight = }')
+
         # check if scrolls are needed
-        needXScroll = canvWidth  < requiredCanvWidth
-        needYScroll = canvHeight < requiredCanvHeight
+        needXScroll = canvWidth  < requiredCanvWidth;        guiLogger.debug(f'{needXScroll = }')
+        needYScroll = canvHeight < requiredCanvHeight;       guiLogger.debug(f'{needYScroll = }')
 
         # Display the images in the given directory
         self.thumbsaves = []    # save thumbnails from being garbage collected
@@ -301,8 +306,7 @@ class GuiImgViewer(Frame):
                 handler = lambda path=imgTuple.path: \
                           ImageOpener(self, path).mainloop()
                 imgButton = Button(canv, width=imgButtonWidth, image=thumbPhoto,
-                            height=imgButtonHeight, command=handler,
-                            cursor='hand2')
+                            command=handler, cursor='hand2')
                 imgButton.pack()
                 canv_id = canv.create_window(colPixel, rowPixel, window=imgButton,
                     width=imgButtonWidth, height=imgButtonHeight, anchor=NW)
@@ -321,6 +325,7 @@ class GuiImgViewer(Frame):
             xscroll.pack(side=BOTTOM, fill=X)
             canv.config(xscrollcommand=xscroll.set)
 
+        guiLogger.debug(f'{self.idFileDict = }')
         canv.pack(expand=True, fill=BOTH)
         # save canvas obj for further config by user
         self.canv = canv
@@ -377,7 +382,6 @@ class GuiImgViewer(Frame):
 
         cachedir = os.path.join(imgdir, cachedir)
         os.makedirs(cachedir, exist_ok=True)
-        guiLogger.debug(f'{cachedir = }')
         thumbNameSpec = '%(fname)s_thumb%(width)dx%(height)d%(ext)s'
         thumblist = []
 
@@ -387,10 +391,11 @@ class GuiImgViewer(Frame):
             # if file is a suitable image
             if os.path.isfile(filepath) and ftype and \
                 ftype.split('/')[0] == 'image' and enc is None:
-                head, ext = os.path.splitext(filepath)
+                head, ext = os.path.splitext(filename)
                 thumbname = thumbNameSpec % dict(
                     fname=head, width=thumbsize[0], height=thumbsize[1], ext=ext)
                 thumbpath = os.path.join(cachedir, thumbname)
+                guiLogger.debug(f'{thumbpath = }')
 
                 # if cache exists
                 if os.path.exists(thumbpath):
