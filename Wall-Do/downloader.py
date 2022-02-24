@@ -4,7 +4,7 @@
 
  URL signature looks like:
  https://wall.alphacoders.com/search.php?search={searchKey}&page={PageNo}
- The website may internally store some popular keywords like spiderman
+ The website may internally store some popular keywords like 'spiderman'
  in collections and serve them with collection ids, need to look out for those
  variations.
 
@@ -35,53 +35,57 @@ class AlphaDownloader:
     # For current session (total)
     totalSize = 0
     totalDownloads = 0
-    printFormat = ("Current Run:\n"
-                  "Images Downloaded: %(numDownloaded)d, Time taken: %(lastDownloadTime)d secs\n"
-                  "Number of Pages: %(numPages)d, Downloaded: %(downloadSize).3f MB\n\n"
+    printFormat = ("Current Run :\n"
+                  "Images Downloaded : %(numDownloaded)d, Time taken: %(lastDownloadTime)d secs\n"
+                  "Number of Pages   : %(numPages)d, Downloaded: %(downloadSize).3f MB\n\n"
                   "Session Details:\n"
-                  "Total Images: %(totalDownloads)d, Total Size: %(totalSize).3f MB\n")
+                  "Total Images   : %(totalDownloads)d, Total Size: %(totalSize).3f MB\n")
 
-    def __init__(self, searchKey=None, numImages=1, downloadDir=os.curdir, trace=False):
+    def __init__(self, trace=False):
         " initialize attributes for object "
         self.imageMetaDict = dict()
+        self.trace = trace
         self.mutex = threading.Lock()
+        self._queryStrServed = None
         self.downloadSession = requests.Session()
         self.downloadSession.headers.update(self.headers)
-        self.reset(searchKey, numImages, downloadDir, trace)
 
-    def reset(self, searchKey=None, numImages=1, downloadDir=os.curdir, trace=False):
-        " reset settings for different download config "
+    def startDownload(self, 
+                      searchKey, 
+                      numImages, 
+                      downloadDir  = os.curdir, 
+                      maxretries   = 2, 
+                      imgPerThread = 5):
+        """ 
+        toplevel method for starting download, handle and check actual
+        download success 
+        """
+        # PreDownload Hooks
         if numImages <= 0:
             raise InvalidDownloadNum
 
-        self.searchKey = searchKey;                         downloadLogger.info(f'{self.searchKey = }')
-        self.numImages = numImages;                         downloadLogger.info(f'{self.numImages = }')
-        self.trace = trace
-
         # Make sure download dir exists
-        os.makedirs(downloadDir, exist_ok=True);            downloadLogger.info(f'{downloadDir = }')
+        os.makedirs(downloadDir, exist_ok=True)
+        downloadLogger.info(f'{downloadDir = }')
         self.downloadDir = downloadDir
 
         # For current run
+        self.searchKey = searchKey
+        self.numImages = numImages
         self.numPages = 0
         self.numDownloaded = 0
         self.downloadSize  = 0
         self.lastDownloadTime = None
 
-    def startDownload(self, maxretries=2, imgPerThread=5):
-        """ 
-        toplevel method for starting download, handle and check actual
-        download success 
-
-        """
         MaxRetries = maxretries
-        self.imageMetaDict = {}             # clear download links
         start = time.time()
-        self._queryStrServed = None         # query string returned by website (may be collection id)
-
-        self.numPages = retries = 0
+        self._queryStrServed = None   # query string returned by website
+                                      # (may be collection id)
+        retries = 0
+        # Try until actual number of images downloaded is less than
+        # given number; and retries is less than max retries
         while self.numDownloaded < self.numImages and retries < MaxRetries:
-            self._runDownload(imgPerThread)
+            self._runDownload(searchKey, imgPerThread)
             retries += 1
 
         self.lastDownloadTime = time.time() - start
@@ -107,9 +111,9 @@ class AlphaDownloader:
         for imgname, imglink in imgList:
             self.downloadImage(imglink, imgname)
 
-    def _runDownload(self, ImgPerThread):
+    def _runDownload(self, ImgPerThread=5):
         """
-        Download Logic;
+        Threaded Download Logic;
         Perform Download assuming every link works, doesn't check if the actual number of download
         satisfies the required number given
         Not to be invoked directly, use wrapper method startDownload()
@@ -118,14 +122,12 @@ class AlphaDownloader:
         threads  = []
         imgArg   = []
         finished = False
-        self.imgLinksFetched = 0 
+        imgLinksFetched = 0 
 
         while not finished:
             self.numPages += 1
-            for imgTuple in self.fetchLinks(self.numPages):
-                # FIXME: Loss of cycles even after download finished
-                # keeps iterating the for loop even if imgLinks are >= numImages
-                if self.imgLinksFetched >= self.numImages:
+            for imgTuple in self.fetchLinks(self.searchKey, self.numPages):
+                if imgLinksFetched >= self.numImages:
                     finished = True
                 else:
                     imgArg.append(imgTuple)
@@ -134,12 +136,17 @@ class AlphaDownloader:
                 # (not a multiple of imgPerThread)
                 if len(imgArg) == ImgPerThread \
                         or (finished and imgArg):
-                    thread = threading.Thread(target=self._downloadSq, args=(imgArg,))
-                    threads.append(thread);                                 downloadLogger.info(f'{len(imgArg) = }')
-                    thread.start();                                         downloadLogger.debug(f'{self.imgLinksFetched = }')
-                    imgArg = [];                                            downloadLogger.debug(f'{self.numPages = }')
-                self.imgLinksFetched += 1
+                    downloadLogger.info(f'{len(imgArg) = }')
+                    downloadLogger.debug(f'{imgLinksFetched = }')
+                    downloadLogger.debug(f'{self.numPages = }')
 
+                    thread = threading.Thread(target=self._downloadSq, args=(imgArg,))
+                    threads.append(thread)
+                    thread.start()
+                    imgArg = []
+                imgLinksFetched += 1
+                if finished: break    # break inner loop if download
+                                      # number satisfied
         for thread in threads: thread.join()
 
     def downloadImage(self, link, name=''):
@@ -191,7 +198,7 @@ class AlphaDownloader:
         msgb.showinfo(title='Imported', 
                       message='Previous session was successfully restored')
 
-    def fetchLinks(self, start, stop=None, step=1):
+    def fetchLinks(self, searchKey, start=1, stop=None, step=1):
         """
         Generate the image links for pages start to stop (non-inclusive)
         Optional: Stop: if not given, scrape links for start page only,
@@ -203,14 +210,16 @@ class AlphaDownloader:
         for pageNum in range(start, stop, step):
             # construct page url, if first pass, use base query, else fetched
             # query string
-            pageInfoDict = dict(searchKey=self.searchKey, pageNo=pageNum)
+            pageInfoDict = dict(searchKey=searchKey, pageNo=pageNum)
             pageUrl = self._queryStrServed + f'&page={pageNum}' \
                             if self._queryStrServed \
-                            else self.queryStr % pageInfoDict;                     downloadLogger.info(f'{pageUrl = }')
+                            else self.queryStr % pageInfoDict
+            downloadLogger.info(f'{pageUrl = }')
             # fetch page
             try:
                 pageResponse = self.downloadSession.get(pageUrl)
-                pageResponse.raise_for_status();                                   downloadLogger.info(f'{pageResponse.status_code = }')
+                pageResponse.raise_for_status()
+                downloadLogger.info(f'{pageResponse.status_code = }')
             except Exception as exc:
                 downloadLogger.error(f'Error Downloading Page: {pageNum}\n{str(exc)}')
                 continue
@@ -228,7 +237,8 @@ class AlphaDownloader:
             downloadLogger.debug(f'{pageUrl = }')
 
             # get the image elements with class='img-responsive'
-            imageTags = mainPageSoup.select('img.img-responsive');                 downloadLogger.debug(f'{len(imageTags) = }')
+            imageTags = mainPageSoup.select('img.img-responsive')
+            downloadLogger.debug(f'{len(imageTags) = }')
             # generate imagename, imagelink for every image found
             for imageTag in imageTags:
                 imageName = imageTag.get('alt').rstrip(' HD Wallpaper | Background Image')[:50]
@@ -246,29 +256,3 @@ class AlphaDownloader:
         " Return size in bytes to MiB "
         return sizeInBy / (1024 * 1024)
 
-"""
-GUI oriented Downloader that updates status with tk variables
-"""
-class GuiDownloader(AlphaDownloader):
-    def __init__(self, *args, sessionVar=None, progressVar=None, currentVar=None, **kw):
-        AlphaDownloader.__init__(self, *args, **kw)
-        self.sessionVar  = sessionVar
-        self.progressVar = progressVar
-        self.currentVar  = currentVar
-        downloadLogger.debug(f'{self.sessionVar = }, {self.progressVar = }, {self.currentVar = }')
-
-    def downloadImage(self, link, name=''):
-        AlphaDownloader.downloadImage(self, link, name)
-        with self.mutex:
-            if self.currentVar:
-                self.currentVar.set(f'Downloaded\n{link}...')
-            if self.progressVar:
-                self.progressVar.set((self.numDownloaded / self.numImages) * 100)
-            downloadLogger.debug(f'{self.numDownloaded = }')
-
-    def startDownload(self, **kw):
-        AlphaDownloader.startDownload(self, **kw)
-        if self.sessionVar:
-            self.sessionVar.set(self.printFormat % self.sessionDict)
-        if self.currentVar:
-            self.currentVar.set('Finished')

@@ -13,6 +13,7 @@ from tkinter.ttk import *
 from tkinter import messagebox as msgb, filedialog as fldg
 from PIL.ImageTk import Image, PhotoImage
 from exceptions import TopLevelWidgetsOnly
+from downloader import AlphaDownloader
 from logger import mainlogger
 
 Image.MAX_IMAGE_PIXELS = 1024 * 1024 * 100   # 100 MB max
@@ -95,7 +96,7 @@ class GuiInput(Frame):
     entryWidgetWidth = 30
     padding = dict(
         padx=4,
-        pady=4
+        pady=4,
     )
     def __init__(self, parent, **kw):
         Frame.__init__(self, master=parent, **kw)
@@ -219,39 +220,7 @@ class GuiInput(Frame):
         guiLogger.info(f'{invalidField = }')
         return None if invalidField \
                     else InputField(searchKey=searchKey,
-                                    dirname=dirname, imageNum=imageNum)
-
-# Downloader Info
-class GuiDetails(Frame):
-    """
-    A Subsection of the gui body that contains details about the
-    current download, Session details, size, etc.; Progress bar,
-    Label showing the current download image name, and 'Finished' if finished,
-    """
-    def __init__(self, parent=None, **kw):
-        Frame.__init__(self, parent, **kw)
-        self.sessionVar  = StringVar(value='Enter a search keyword to start downloading!')
-        self.progressVar = DoubleVar()
-        self.currentVar  = StringVar()
-
-        self.displaySessionDetails()
-        self.displayProgressbar()
-        self.displayStatus()
-
-    def displaySessionDetails(self):
-        Message(self, textvariable=self.sessionVar, 
-                width=300, font=('consolas', 12, 'bold italic'),
-        ).pack(expand=True,fill=BOTH)
-
-    def displayProgressbar(self):
-        Progressbar(self, var=self.progressVar, length=100, 
-                    mode='determinate', orient='horizontal',
-        ).pack(fill=BOTH)
-
-    def displayStatus(self):
-        Message(self, textvariable=self.currentVar,
-                width=350, font=('inconsolata', 15, 'italic'),
-        ).pack(expand=True, fill=BOTH)
+                                dirname=dirname, imageNum=imageNum)
 
 # Image Viewer
 class GuiImgViewer(Frame):
@@ -476,6 +445,60 @@ class ImageOpener(Toplevel):
         self.grid_columnconfigure(0, weight=1)
 
         self.photo = photo  # save from garbage collection
+
+"""
+GUI oriented Downloader that updates status with tk variables
+Use multiple inheritance for is-a relationships,
+the guidownloader is both a frame and a downloader
+"""
+class GuiDownloader(Frame, AlphaDownloader):
+    def __init__(self, parent=None):
+        # Base Class Init
+        Frame.__init__(self, parent)
+        AlphaDownloader.__init__(self, trace=False)
+
+        self.sessionVar  = StringVar(value='Enter a search keyword '
+                                        'to start downloading!')
+        self.progressVar = DoubleVar()
+        self.currentVar  = StringVar()
+
+        self.makeGuiInput()
+        self.makeGuiDetails()
+        self.makeGuiViewer()
+        self.makeDownloadButton()
+
+    # Downloader Info
+    def makeGuiInput(self):
+        " Position the gui input frame "
+        self.guiInput = GuiInput(self)
+        self.guiInput.pack()
+
+    def makeGuiDetails(self):
+        " Create the Gui details section "
+        Message(self, textvariable=self.sessionVar, 
+                width=300, font=('consolas', 12, 'bold italic'),
+        ).pack(expand=True,fill=BOTH)
+        Progressbar(self, var=self.progressVar, length=100, 
+                    mode='determinate', orient='horizontal',
+        ).pack(fill=BOTH)
+        Message(self, textvariable=self.currentVar,
+                width=350, font=('inconsolata', 15, 'italic'),
+        ).pack(expand=True, fill=BOTH)
+
+    def makeGuiViewer(self):
+        pass
+
+    def downloadImage(self, link, name=''):
+        AlphaDownloader.downloadImage(self, link, name)
+        with self.mutex:
+            self.currentVar.set(f'Downloaded\n{link}...')
+            self.progressVar.set((self.numDownloaded / self.numImages) * 100)
+            downloadLogger.debug(f'{self.numDownloaded = }')
+
+    def startDownload(self, *args, **kw):
+        AlphaDownloader.startDownload(self, *args, **kw)
+        self.sessionVar.set(self.printFormat % self.sessionDict)
+        self.currentVar.set('Finished')
 
 if __name__ == '__main__':
     import webbrowser
