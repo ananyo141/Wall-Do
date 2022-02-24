@@ -15,6 +15,8 @@ from PIL.ImageTk import Image, PhotoImage
 from exceptions import TopLevelWidgetsOnly
 from logger import mainlogger
 
+Image.MAX_IMAGE_PIXELS = 1024 * 1024 * 100   # 100 MB max
+
 # Create logger
 guiLogger = logging.getLogger('main.gui')
 

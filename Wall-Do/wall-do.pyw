@@ -94,7 +94,9 @@ def makeGUI():
             downloaderObj.reset(searchKey=inputs.searchKey, numImages=inputs.imageNum,
                 downloadDir=inputs.dirname)
             threading.Thread(target=downloaderObj.startDownload, args=()).start()
-            threading.Thread(target=updateCanv, args=()).start()
+            updateThread = threading.Thread(target=updateCanv, args=())
+            updateThread.daemon = True
+            updateThread.start()
 
     root = tk.Tk()
     root.title('Wall-Do! - A Wallpaper Downloader')
