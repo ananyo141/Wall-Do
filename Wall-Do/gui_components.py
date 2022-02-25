@@ -6,7 +6,7 @@
 
 # Wildcard imports are fine as this module deals only with
 # tk widgets; use namespaces in the main script
-import sys, os, logging, mimetypes as mt
+import sys, os, logging
 from collections import namedtuple
 from tkinter import *
 from tkinter.ttk import *
@@ -426,6 +426,16 @@ class GuiDownloader(Frame, AlphaDownloader):
             self.canv.config(scrollregion =             # row offset, increase
                     (0, 0, self.xoffset, self.yoffset)) # scrollregion accordingly
             self.xoffset = 0
+
+    def makeDownloadButton(self):
+        " Create the download button for the gui downloader "
+        def handler():
+            inputs = self.guiInput.getValues()
+            if inputs:
+                self.startDownload(inputs.searchKey, 
+                        inputs.imageNum, inputs.dirname)
+
+        Button(self, text='Start', command=handler).pack()
 
     @staticmethod
     def makeThumb(imgPath, thumbsize=(90,60), cachedir='.cache', enableCache=True):
