@@ -184,6 +184,7 @@ class AlphaDownloader:
 
         if self.trace:
             print(f'Downloaded: {name}...')
+        self.imgfilename = imgfilename      # save filename for subclass
 
     def restoreMetadata(self, imageMetaDict, imgPerThread=5):
         " Download images from a previously saved name-image dict "

@@ -222,174 +222,8 @@ class GuiInput(Frame):
                     else InputField(searchKey=searchKey,
                                 dirname=dirname, imageNum=imageNum)
 
-# Image Viewer
-class GuiImgViewer(Frame):
-    """
-    An Image viewer with a scrolled canvas at the center,
-    support thumb caching, opens the image in a new window, with cursor 'hand2',
-    and right click menu with options to open with system native app, delete,
-    delete all and select delete
-    """
-    def __init__(self, parent=None, imgdir=os.curdir, 
-                 canvsize=None, thumbsize=None, **kw):
-        Frame.__init__(self, parent, **kw)
-        self.idFileDict = dict()   # keep track of canvas ids and filenames
-        self.imgdir = imgdir
-        self.makeImgViewer(canvsize=canvsize, thumbsize=thumbsize)
-        self.makeRightClickMenu()
-
-    def config(imgdir):
-        self.imgdir = imgdir
-
-    def makeImgViewer(self, canvsize=None, thumbsize=None, colsize=4):
-        " Create the scrolled canvas with image thumbs "
-        if canvsize is None: canvsize = (300,300)           # default canvas size
-        if thumbsize is None: thumbsize = (90,60)           # default thumbsize
-        canvWidth, canvHeight = canvsize
-        canv = Canvas(self, width=canvWidth, height=canvHeight,
-                      bd=2, relief=GROOVE)
-
-        # Use thumb caching, display in viewer
-        imgObjs = self.makeThumbs(thumbsize, self.imgdir)
-
-        # Calculate canvas scrollregion
-        imgButtonWidth, imgButtonHeight = thumbsize
-        requiredCanvWidth = imgButtonWidth * colsize
-        requiredCanvHeight = imgButtonHeight * (len(imgObjs) // colsize)
-        canv.config(scrollregion=(0, 0, requiredCanvWidth, requiredCanvHeight))
-
-        guiLogger.debug(f'{imgButtonWidth = }, {imgButtonHeight = }')
-        guiLogger.debug(f'{requiredCanvWidth = }, {requiredCanvHeight = }')
-
-        # check if scrolls are needed
-        needXScroll = canvWidth  < requiredCanvWidth;        guiLogger.debug(f'{needXScroll = }')
-        needYScroll = canvHeight < requiredCanvHeight;       guiLogger.debug(f'{needYScroll = }')
-
-        # Display the images in the given directory
-        self.thumbsaves = []    # save thumbnails from being garbage collected
-        rowPixel = 0            # calculate pixel offset from top of canvas
-        while imgObjs:
-            colPixel = 0        # calculate pixel offset from left of canvas
-            imgRow, imgObjs = imgObjs[:colsize], imgObjs[colsize:]
-            for imgTuple in imgRow:
-                thumbPhoto = PhotoImage(imgTuple.obj)
-                # make lambda remember each path
-                handler = lambda path=imgTuple.path: \
-                          ImageOpener(self, path).mainloop()
-                imgButton = Button(canv, width=imgButtonWidth, image=thumbPhoto,
-                            command=handler, cursor='hand2')
-                imgButton.pack()
-                canv_id = canv.create_window(colPixel, rowPixel, window=imgButton,
-                    width=imgButtonWidth, height=imgButtonHeight, anchor=NW)
-                self.idFileDict[canv_id] = imgTuple.path
-
-                self.thumbsaves.append(thumbPhoto)
-                colPixel += imgButtonWidth
-            rowPixel += imgButtonHeight
-
-        if needYScroll:
-            yscroll = Scrollbar(self, command=canv.yview)
-            yscroll.pack(side=RIGHT, fill=Y)
-            canv.config(yscrollcommand=yscroll.set)
-        if needXScroll:
-            xscroll = Scrollbar(self, command=canv.xview, orient='horizontal')
-            xscroll.pack(side=BOTTOM, fill=X)
-            canv.config(xscrollcommand=xscroll.set)
-
-        guiLogger.debug(f'{self.idFileDict = }')
-        canv.pack(expand=True, fill=BOTH)
-        # save canvas obj for further config by user
-        self.canv = canv
-
-    def makeRightClickMenu(self):
-        """
-        Create Right Click menu for Image Viewer
-        """
-        def onRightClick(event):
-            self.rightClickEvent = event
-            try:
-                rightClickMenu.tk_popup(event.x_root, event.y_root)
-            finally:
-                rightClickMenu.grab_release()
-
-        rightClickMenu = Menu(self.canv, tearoff=False)
-        rightClickMenu.add_command(label='Open with Default App', 
-                                   command=self.rightDefaultApp)
-        rightClickMenu.add_separator()
-        rightClickMenu.add_command(label='Delete', 
-                                   command=self.rightDelete)
-        rightClickMenu.add_command(label='Delete All', 
-                                   command=self.rightDeleteAll)
-
-        self.canv.bind('<Button-3>', onRightClick)
-
-    def rightDefaultApp(self):
-        " Open the image in native system app "
-        import webbrowser
-        canv_id = self.canv.find_closest(self.event.x, self.event.y)
-        webbrowser.open(self.idFileDict[canv_id])
-
-    def rightDelete(self):
-        " Delete the selected image "
-        canv_id = self.canv.find_closest(self.event.x, self.event.y)
-        # may use send2trash to delete to recycle bin
-        os.unlink(self.idFileDict[canv_id])
-
-    def rightDeleteAll(self):
-        " Delete the all images "
-        for filename in os.listdir(self.imgdir):
-            ftype, enc = mt.guess_type(filename)
-            if ftype and ftype.split('/')[0] == 'image':
-                os.unlink(os.path.join(self.imgdir, filename))
-
-    @staticmethod
-    def makeThumbs(thumbsize, imgdir=os.getcwd(), cachedir='.cache', enableCache=True):
-        """
-        Identify the images in the given directory and return
-        a named tuple of (imgpath, imgobj) resized to given size;
-        thumbsize is a tuple containing (width, height) of thumbnail
-        """
-        Thumb = namedtuple('Thumb', ['path', 'obj', 'width', 'height'])
-
-        cachedir = os.path.join(imgdir, cachedir)
-        os.makedirs(cachedir, exist_ok=True)
-        thumbNameSpec = '%(fname)s_thumb%(width)dx%(height)d%(ext)s'
-        thumblist = []
-
-        for filename in os.listdir(imgdir):
-            filepath = os.path.join(imgdir, filename)
-            ftype, enc = mt.guess_type(filepath)
-            # if file is a suitable image
-            if os.path.isfile(filepath) and ftype and \
-                ftype.split('/')[0] == 'image' and enc is None:
-                head, ext = os.path.splitext(filename)
-                thumbname = thumbNameSpec % dict(
-                    fname=head, width=thumbsize[0], height=thumbsize[1], ext=ext)
-                thumbpath = os.path.join(cachedir, thumbname)
-                guiLogger.debug(f'{thumbpath = }')
-
-                # if cache exists
-                if os.path.exists(thumbpath):
-                    thumbObj = Image.open(thumbpath)
-                # create cache
-                else:
-                    try:
-                        thumbObj = Image.open(filepath)
-                        thumbObj.thumbnail(thumbsize, Image.ANTIALIAS)
-                        if enableCache:
-                            thumbObj.save(thumbpath)
-                    except Exception as exc:
-                        guiLogger.error(f'Error creating thumbnail: {filepath}'
-                                        f'\nTraceback Details: {str(exc)}')
-                        continue
-                # Path to original file and resized thumbnail image object
-                thumblist.append(Thumb(path=filepath, obj=thumbObj,
-                                       width=thumbObj.width,
-                                       height=thumbObj.height))
-        return thumblist
-
 # Automatic Scrollbar that hides and returns
-# when widget associated is resized
+# when associated widget is resized
 class AutoScrollbar(Scrollbar):
    def set(self, low, high):
        if float(low) <= 0 and float(high) >= 1:
@@ -419,7 +253,7 @@ class ImageOpener(Toplevel):
 
     def showImage(self):
         " Show the image in fullscreen filling screen "
-        screenWidth, screenHeight = (self.winfo_screenwidth() - 25), (self.winfo_screenheight() - 70)
+        screenWidth, screenHeight = (self.winfo_screenwidth() - 15), (self.winfo_screenheight() - 70)
         guiLogger.info(f'{screenWidth = }, {screenHeight = }')
         image = Image.open(self.imgPath)
         image = image.resize((screenWidth, screenHeight), Image.ANTIALIAS)
@@ -467,6 +301,24 @@ class GuiDownloader(Frame, AlphaDownloader):
         self.makeGuiViewer()
         self.makeDownloadButton()
 
+    def startDownload(self, *args, **kw):
+        self.xoffset = 0    # initialize canvas pixel offsets
+        self.yoffset = 0    # for inserting image buttons
+
+        self.canv.delete(ALL)
+        AlphaDownloader.startDownload(self, *args, **kw)
+        self.sessionVar.set(self.printFormat % self.sessionDict)
+        self.currentVar.set('Finished')
+
+    def downloadImage(self, link, name=''):
+        AlphaDownloader.downloadImage(self, link, name)
+        with self.mutex:
+            self.currentVar.set(f'Downloaded\n{link}...')
+            self.progressVar.set((self.numDownloaded / self.numImages) * 100)
+            downloadLogger.debug(f'{self.numDownloaded = }')
+            # Populate the canvas
+            self.createThumbnailOnCanvas()
+
     # Downloader Info
     def makeGuiInput(self):
         " Position the gui input frame "
@@ -485,31 +337,132 @@ class GuiDownloader(Frame, AlphaDownloader):
                 width=350, font=('inconsolata', 15, 'italic'),
         ).pack(expand=True, fill=BOTH)
 
-    def makeGuiViewer(self):
-        pass
+    def makeGuiViewer(self, canvsize=(300,300)):
+        " Create the viewer canvas "
+        canv = Canvas(self, bd=2, 
+                      width=canvsize[0], 
+                      height=canvsize[1], 
+                      relief=GROOVE)
+        yscroll = Scrollbar(self, command=canv.yview)
+        canv.config(yscrollcommand=yscroll.set)
+        makeRightClickMenu(self.canv)
 
-    def downloadImage(self, link, name=''):
-        AlphaDownloader.downloadImage(self, link, name)
-        with self.mutex:
-            self.currentVar.set(f'Downloaded\n{link}...')
-            self.progressVar.set((self.numDownloaded / self.numImages) * 100)
-            downloadLogger.debug(f'{self.numDownloaded = }')
+        yscroll.pack(side=RIGHT, fill=Y)
+        canv.pack(side=LEFT, expand=True, fill=BOTH)
 
-    def startDownload(self, *args, **kw):
-        AlphaDownloader.startDownload(self, *args, **kw)
-        self.sessionVar.set(self.printFormat % self.sessionDict)
-        self.currentVar.set('Finished')
+        self.idFileDict = dict()    # save button ids and their
+        self.canv = canv            # corresponding image filenames
+        self.canvsize = canvsize
 
-if __name__ == '__main__':
-    import webbrowser
-    root = Tk()
-    root.title("Tester")
-    MakeMenu(root)
-    inp = GuiInput(root)
-    inp.pack(expand=True, fill=BOTH)
-    Button(root, text='Fetch', command=lambda: print(inp.getValues())).pack()
-    Button(root, text='Window', command=lambda: ImageOpener(root, fname).mainloop()).pack()
-    Button(root, text='Native', command=lambda: webbrowser.open(fname)).pack()
-    fname = fldg.askopenfilename() or sys.exit("No image chosen")
-    mainloop()
+    def onRightClick(self, event):
+        " Right click popup; handler for bind calls "
+        self.rightClickEvent = event
+        try:
+            rightClickMenu.tk_popup(event.x_root, event.y_root)
+        finally:
+            rightClickMenu.grab_release()
+
+    def makeRightClickMenu(self):
+        " Create Right click menu for image viewer canvas "
+        rightClickMenu = Menu(self.canv, tearoff=False)
+        rightClickMenu.add_command(label='Open with Default App', 
+                                   command=self.rightDefaultApp)
+        rightClickMenu.add_separator()
+        rightClickMenu.add_command(label='Delete', 
+                                   command=self.rightDelete)
+        rightClickMenu.add_command(label='Delete All', 
+                                   command=self.rightDeleteAll)
+        self.canv.bind('<Button-3>', self.onRightClick)
+
+    def _getButtonId(self, x, y):
+        """ 
+        find the (actual) position of the button relative to the
+        canvas scrollregion-start, not just the viewing region,
+        and return its tk canvas id
+        """
+        return self.canv.find_closest(self.canv.canvasx(x),
+                self.canv.canvasy(y))
+
+    def rightDefaultApp(self):
+        " Open the image in system native image viewer "
+        import webbrowser
+        canvId = self._getButtonId(event.x, event.y)
+        webbrowser.open(self.idFileDict[canvId])
+
+    def rightDelete(self):
+        " Delete the selected image "
+        canvId = self._getButtonId(event.x, event.y)
+        # may use send2trash to delete to recycle bin
+        os.unlink(self.idFileDict[canvId])
+
+    def rightDeleteAll(self):
+        " Delete the all downloaded images "
+        for filename in self.idFileDict.values():
+            os.unlink(filename)
+
+    def createThumbnailOnCanvas(self):
+        " Create a thumbnail entry on canvas viewer "
+        thumbTuple = self.makeThumb(self.imgfilename)
+        # create imagebutton
+        handler = lambda: ImageOpener(self.canv, 
+                          thumbTuple.path).mainloop()
+        imgButtonWidth, imgButtonHeight = thumbTuple.width, thumbTuple.height
+        imgButton = Button(self.canv, command=handler,
+                    width=imgButtonWidth, height=imgButtonHeight,
+                    cursor='hand2')
+        imgButton.pack(fill=BOTH)
+        buttonID = self.canv.create_window(self.xoffset, self.yoffset, 
+                    window=imgButton, width=imgButtonWidth, 
+                    height=imgButtonHeight, anchor=NW)
+
+        self.idFileDict[buttonID] = thumbTuple.path
+        self.canv.tag_bind(buttonID, '<Button-3>', self.onRightClick)
+
+        self.xoffset += imgButtonWidth
+        # save room for one image button to prevent clipping
+        insertUptoCanvasWidth = self.canvsize[0] - imgButtonWidth
+        if self.xoffset > insertUptoCanvasWidth:        # if width exceeds canvas
+            self.yoffset += imgButtonHeight             # reset col offset and increase
+            self.canv.config(scrollregion =             # row offset, increase
+                    (0, 0, self.xoffset, self.yoffset)) # scrollregion accordingly
+            self.xoffset = 0
+
+    @staticmethod
+    def makeThumb(imgPath, thumbsize=(90,60), cachedir='.cache', enableCache=True):
+        """
+        Create thumbnail of the given image path and return
+        a named tuple of (imgpath, imgobj, width, height) resized to given size;
+        thumbsize is a tuple containing (width, height) of thumbnail
+        """
+        Thumb = namedtuple('Thumb', ['path', 'obj', 'width', 'height'])
+
+        cachedir = os.path.join(os.path.dirname(imgPath), cachedir)
+        os.makedirs(cachedir, exist_ok=True)
+        thumbNameSpec = '%(fname)s_thumb%(width)dx%(height)d%(ext)s'
+
+        head, ext = os.path.splitext(os.path.basename(imgPath))
+        thumbname = thumbNameSpec % dict(
+            fname=head, width=thumbsize[0], height=thumbsize[1], ext=ext,
+        )
+        thumbpath = os.path.join(cachedir, thumbname)
+        guiLogger.debug(f'{thumbpath = }')
+
+        # if cache exists
+        if os.path.exists(thumbpath):
+            thumbObj = Image.open(thumbpath)
+        # create cache
+        else:
+            try:
+                thumbObj = Image.open(filepath)
+                thumbObj.thumbnail(thumbsize, Image.ANTIALIAS)
+                if enableCache:
+                    thumbObj.save(thumbpath)
+            except Exception as exc:
+                guiLogger.error(f'Error creating thumbnail: {filepath}'
+                                f'\nTraceback Details: {str(exc)}')
+                return None
+        # Path to original file and resized thumbnail image object
+        return Thumb(path=filepath, obj=thumbObj,
+                     width=thumbObj.width,
+                     height=thumbObj.height)
 
