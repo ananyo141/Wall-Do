@@ -6,7 +6,7 @@
 
 # Wildcard imports are fine as this module deals only with
 # tk widgets; use namespaces in the main script
-import sys, os, logging
+import sys, os, logging, threading
 from collections import namedtuple
 from tkinter import *
 from tkinter.ttk import *
@@ -253,7 +253,7 @@ class ImageOpener(Toplevel):
 
     def showImage(self):
         " Show the image in fullscreen filling screen "
-        screenWidth, screenHeight = (self.winfo_screenwidth() - 15), (self.winfo_screenheight() - 70)
+        screenWidth, screenHeight = (self.winfo_screenwidth() - 20), (self.winfo_screenheight() - 80)
         guiLogger.info(f'{screenWidth = }, {screenHeight = }')
         image = Image.open(self.imgPath)
         image = image.resize((screenWidth, screenHeight), Image.ANTIALIAS)
@@ -304,6 +304,7 @@ class GuiDownloader(Frame, AlphaDownloader):
     def startDownload(self, *args, **kw):
         self.xoffset = 0    # initialize canvas pixel offsets
         self.yoffset = 0    # for inserting image buttons
+        self.thumbsaves = []
 
         self.canv.delete(ALL)
         AlphaDownloader.startDownload(self, *args, **kw)
@@ -315,7 +316,7 @@ class GuiDownloader(Frame, AlphaDownloader):
         with self.mutex:
             self.currentVar.set(f'Downloaded\n{link}...')
             self.progressVar.set((self.numDownloaded / self.numImages) * 100)
-            downloadLogger.debug(f'{self.numDownloaded = }')
+            guiLogger.debug(f'{self.numDownloaded = }')
             # Populate the canvas
             self.createThumbnailOnCanvas()
 
@@ -329,23 +330,24 @@ class GuiDownloader(Frame, AlphaDownloader):
         " Create the Gui details section "
         Message(self, textvariable=self.sessionVar, 
                 width=300, font=('consolas', 12, 'bold italic'),
-        ).pack(expand=True,fill=BOTH)
-        Progressbar(self, var=self.progressVar, length=100, 
+        ).pack()
+        Progressbar(self, var=self.progressVar, length=100,
                     mode='determinate', orient='horizontal',
-        ).pack(fill=BOTH)
+        ).pack(fill=X, padx=14, pady=14)
         Message(self, textvariable=self.currentVar,
                 width=350, font=('inconsolata', 15, 'italic'),
-        ).pack(expand=True, fill=BOTH)
+        ).pack()
 
     def makeGuiViewer(self, canvsize=(300,300)):
         " Create the viewer canvas "
-        canv = Canvas(self, bd=2, 
+        canvFrame = Frame(self)
+        canvFrame.pack(expand=True, fill=BOTH)
+        canv = Canvas(canvFrame, bd=2, 
                       width=canvsize[0], 
                       height=canvsize[1], 
                       relief=GROOVE)
-        yscroll = Scrollbar(self, command=canv.yview)
+        yscroll = Scrollbar(canvFrame, command=canv.yview)
         canv.config(yscrollcommand=yscroll.set)
-        makeRightClickMenu(self.canv)
 
         yscroll.pack(side=RIGHT, fill=Y)
         canv.pack(side=LEFT, expand=True, fill=BOTH)
@@ -353,14 +355,15 @@ class GuiDownloader(Frame, AlphaDownloader):
         self.idFileDict = dict()    # save button ids and their
         self.canv = canv            # corresponding image filenames
         self.canvsize = canvsize
+        self.makeRightClickMenu()
 
     def onRightClick(self, event):
         " Right click popup; handler for bind calls "
         self.rightClickEvent = event
         try:
-            rightClickMenu.tk_popup(event.x_root, event.y_root)
+            self.rightClickMenu.tk_popup(event.x_root, event.y_root)
         finally:
-            rightClickMenu.grab_release()
+            self.rightClickMenu.grab_release()
 
     def makeRightClickMenu(self):
         " Create Right click menu for image viewer canvas "
@@ -404,12 +407,12 @@ class GuiDownloader(Frame, AlphaDownloader):
         " Create a thumbnail entry on canvas viewer "
         thumbTuple = self.makeThumb(self.imgfilename)
         # create imagebutton
+        thumbPhoto = PhotoImage(thumbTuple.obj)
         handler = lambda: ImageOpener(self.canv, 
                           thumbTuple.path).mainloop()
         imgButtonWidth, imgButtonHeight = thumbTuple.width, thumbTuple.height
-        imgButton = Button(self.canv, command=handler,
-                    width=imgButtonWidth, height=imgButtonHeight,
-                    cursor='hand2')
+        imgButton = Button(self.canv, command=handler, image=thumbPhoto,
+                    width=imgButtonWidth, cursor='hand2')
         imgButton.pack(fill=BOTH)
         buttonID = self.canv.create_window(self.xoffset, self.yoffset, 
                     window=imgButton, width=imgButtonWidth, 
@@ -417,25 +420,30 @@ class GuiDownloader(Frame, AlphaDownloader):
 
         self.idFileDict[buttonID] = thumbTuple.path
         self.canv.tag_bind(buttonID, '<Button-3>', self.onRightClick)
+        self.thumbsaves.append(thumbPhoto)
 
         self.xoffset += imgButtonWidth
+        self.canv.config(scrollregion =
+                (0, 0, self.canvsize[0], self.yoffset))
         # save room for one image button to prevent clipping
         insertUptoCanvasWidth = self.canvsize[0] - imgButtonWidth
         if self.xoffset > insertUptoCanvasWidth:        # if width exceeds canvas
             self.yoffset += imgButtonHeight             # reset col offset and increase
-            self.canv.config(scrollregion =             # row offset, increase
-                    (0, 0, self.xoffset, self.yoffset)) # scrollregion accordingly
-            self.xoffset = 0
+            guiLogger.debug(f'{self.xoffset = }, {self.yoffset = }') # row offset, increase
+            self.xoffset = 0                            # scrollregion accordingly
 
     def makeDownloadButton(self):
         " Create the download button for the gui downloader "
         def handler():
             inputs = self.guiInput.getValues()
             if inputs:
-                self.startDownload(inputs.searchKey, 
+                threading.Thread(
+                    target=self.startDownload, 
+                    args=(inputs.searchKey,
                         inputs.imageNum, inputs.dirname)
+                ).start()
 
-        Button(self, text='Start', command=handler).pack()
+        Button(self, text='Start', command=handler).pack(side=BOTTOM)
 
     @staticmethod
     def makeThumb(imgPath, thumbsize=(90,60), cachedir='.cache', enableCache=True):
@@ -463,16 +471,16 @@ class GuiDownloader(Frame, AlphaDownloader):
         # create cache
         else:
             try:
-                thumbObj = Image.open(filepath)
+                thumbObj = Image.open(imgPath)
                 thumbObj.thumbnail(thumbsize, Image.ANTIALIAS)
                 if enableCache:
                     thumbObj.save(thumbpath)
             except Exception as exc:
-                guiLogger.error(f'Error creating thumbnail: {filepath}'
+                guiLogger.error(f'Error creating thumbnail: {imgPath}'
                                 f'\nTraceback Details: {str(exc)}')
                 return None
         # Path to original file and resized thumbnail image object
-        return Thumb(path=filepath, obj=thumbObj,
+        return Thumb(path=imgPath, obj=thumbObj,
                      width=thumbObj.width,
                      height=thumbObj.height)
 

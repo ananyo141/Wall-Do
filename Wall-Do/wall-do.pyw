@@ -86,12 +86,12 @@ def makeGUI():
     """
     root = tk.Tk()
     root.title('Wall-Do! - A Wallpaper Downloader')
-    root.geometry('400x650')
+    root.geometry('400x760')
     root.protocol('WM_DELETE_WINDOW', lambda: sys.exit(0))
 
-    guiDownloader = GuiDownloader(root, trace=False)
-    guiDownloader.pack(expand=True, fill=BOTH)
-    MakeMenuHandlers(root, guiDownloader)
+    guiDownloader = GuiDownloader(root)
+    guiDownloader.pack(expand=True)
+    MakeMenuHandlers(root, downloaderObj=guiDownloader)
     tk.mainloop()
 
 if __name__ == '__main__':

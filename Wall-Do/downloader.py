@@ -85,7 +85,7 @@ class AlphaDownloader:
         # Try until actual number of images downloaded is less than
         # given number; and retries is less than max retries
         while self.numDownloaded < self.numImages and retries < MaxRetries:
-            self._runDownload(searchKey, imgPerThread)
+            self._runDownload(imgPerThread)
             retries += 1
 
         self.lastDownloadTime = time.time() - start
